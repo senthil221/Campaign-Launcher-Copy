@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(echo {})",
+      "Bash(npm init:*)",
+      "Bash(npm run:*)",
+      "mcp__Claude_Preview__preview_start",
+      "WebFetch(domain:api.smartlead.ai)",
+      "Bash(find '/d/Campaign launcher' -type f -name *.csv -o -name *template* -o -name *example*)"
+    ]
+  }
+}
