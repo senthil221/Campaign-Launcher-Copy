@@ -1127,6 +1127,8 @@ export default function LaunchForm({ onSubmit }: Props) {
                 ? "Add API key in Settings to continue"
                 : leadsFiles.length === 0 || seqState.data === null
                 ? "Upload leads & sequence files to continue"
+                : inboxRequired && masterInboxState.data === null
+                ? "Upload master inboxes file to continue"
                 : inboxRequired && !inboxReady
                 ? "Enter a tag to filter inboxes"
                 : !campaignName.trim()
