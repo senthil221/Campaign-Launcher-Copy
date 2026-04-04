@@ -59,7 +59,8 @@ function normalizeHeaders<T extends Record<string, string>>(
   return rows.map((row) => {
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(row)) {
-      normalized[key.trim().toLowerCase()] = sanitizeText(String(value ?? "").trim());
+      const normalizedKey = key.trim().toLowerCase().replace(/\s+/g, "_");
+      normalized[normalizedKey] = sanitizeText(String(value ?? "").trim());
     }
     return normalized as T;
   });
@@ -84,14 +85,7 @@ export async function parseLeads(
     return { data: rawRows, errors, warnings };
   }
 
-  // Normalize company → company_name (Smartlead's field name)
-  const rows = rawRows.map((row) => {
-    if ("company" in row && !("company_name" in row)) {
-      const { company, ...rest } = row as Record<string, string>;
-      return { ...rest, company_name: company } as LeadRow;
-    }
-    return row as LeadRow;
-  });
+  const rows = rawRows as LeadRow[];
 
   // Warn about missing expected columns (not errors — upload still works)
   const expectedCols: Array<[string, string]> = [
