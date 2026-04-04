@@ -841,6 +841,8 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const tagNoMatch = masterInboxState.data !== null && inboxTag.trim().length > 0 && filteredInboxes !== null && filteredInboxes.length === 0;
   const inboxReady = filteredInboxes !== null && filteredInboxes.length > 0;
+  // Inboxes are optional in draft mode — required only when launching
+  const inboxRequired = mode === "launch";
 
   const hasErrors =
     leadsFiles.some((f) => f.errors.length > 0) ||
@@ -852,7 +854,7 @@ export default function LaunchForm({ onSubmit }: Props) {
     leadsFiles.length > 0 &&
     leadsFiles.every((f) => f.data !== null && !f.loading) &&
     seqState.data !== null &&
-    inboxReady;
+    (inboxReady || !inboxRequired);
 
   const canLaunch =
     campaignName.trim().length > 0 &&
@@ -1020,7 +1022,9 @@ export default function LaunchForm({ onSubmit }: Props) {
                 onFile={handleMasterInboxes}
               />
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">Tag filter <span className="text-red-400">*</span></label>
+                <label className="text-xs font-medium text-gray-400">
+                    Tag filter{inboxRequired ? <span className="text-red-400"> *</span> : <span className="text-gray-600"> — optional in draft</span>}
+                  </label>
                 <input
                   type="text"
                   value={inboxTag}
@@ -1121,9 +1125,9 @@ export default function LaunchForm({ onSubmit }: Props) {
             >
               {!apiConfig.apiKey
                 ? "Add API key in Settings to continue"
-                : leadsFiles.length === 0 || seqState.data === null || masterInboxState.data === null
-                ? "Upload all 3 files to continue"
-                : masterInboxState.data !== null && !inboxTag.trim()
+                : leadsFiles.length === 0 || seqState.data === null
+                ? "Upload leads & sequence files to continue"
+                : inboxRequired && !inboxReady
                 ? "Enter a tag to filter inboxes"
                 : !campaignName.trim()
                 ? "Enter a campaign name to continue"

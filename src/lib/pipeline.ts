@@ -173,24 +173,30 @@ export async function* runPipeline(
 
   if (startIndex <= STEP_ORDER.indexOf("inboxes")) {
     const s = step("inboxes");
-    s.status = "running";
-    yield emit({ campaignId });
     const inboxIds = parseInboxIds(input.inboxes);
-    const batches = chunkArray(inboxIds, 25);
-    try {
-      for (let i = 0; i < batches.length; i++) {
-        await addInboxBatch(campaignId, batches[i], cfg);
-        s.detail = `batch ${i + 1} of ${batches.length} ✓`;
+    if (inboxIds.length === 0) {
+      s.status = "skipped";
+      s.detail = "none — skipped for draft";
+      yield emit({ campaignId });
+    } else {
+      s.status = "running";
+      yield emit({ campaignId });
+      const batches = chunkArray(inboxIds, 25);
+      try {
+        for (let i = 0; i < batches.length; i++) {
+          await addInboxBatch(campaignId, batches[i], cfg);
+          s.detail = `batch ${i + 1} of ${batches.length} ✓`;
+          yield emit({ campaignId });
+        }
+        s.status = "done";
+        s.detail = `${inboxIds.length} inboxes added · ${input.inboxTag}`;
         yield emit({ campaignId });
+      } catch (err) {
+        s.status = "error";
+        s.error = extractErrorMessage(err);
+        yield emit({ campaignId });
+        return;
       }
-      s.status = "done";
-      s.detail = `${inboxIds.length} inboxes added · ${input.inboxTag}`;
-      yield emit({ campaignId });
-    } catch (err) {
-      s.status = "error";
-      s.error = extractErrorMessage(err);
-      yield emit({ campaignId });
-      return;
     }
   }
 
