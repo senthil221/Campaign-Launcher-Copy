@@ -41,6 +41,7 @@ export interface FormValues {
   leads: LeadRow[];
   sequences: SequenceRow[];
   inboxes: InboxRow[];
+  inboxTag: string;
   apiConfig: ApiConfig;
   campaignSettings: CampaignSettings;
 }
@@ -819,11 +820,11 @@ export default function LaunchForm({ onSubmit }: Props) {
   // Filter master sheet by tag, dedup by email
   const filteredInboxes = React.useMemo<MasterInboxRow[] | null>(() => {
     if (!masterInboxState.data || !inboxTag.trim()) return null;
-    const tag = inboxTag.trim().toLowerCase();
+    const tag = inboxTag.trim();
     const seen = new Set<string>();
     const out: MasterInboxRow[] = [];
     for (const row of masterInboxState.data) {
-      if (row.tag.toLowerCase() === tag && !seen.has(row.email)) {
+      if (row.tag === tag && !seen.has(row.email)) {
         seen.add(row.email);
         out.push(row);
       }
@@ -833,8 +834,8 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const inboxSkippedCount = React.useMemo(() => {
     if (!masterInboxState.data || !inboxTag.trim() || filteredInboxes === null) return 0;
-    const tag = inboxTag.trim().toLowerCase();
-    const total = masterInboxState.data.filter((r) => r.tag.toLowerCase() === tag).length;
+    const tag = inboxTag.trim();
+    const total = masterInboxState.data.filter((r) => r.tag === tag).length;
     return total - filteredInboxes.length;
   }, [masterInboxState.data, inboxTag, filteredInboxes]);
 
@@ -872,6 +873,7 @@ export default function LaunchForm({ onSubmit }: Props) {
       leads: leadsFiles.flatMap((f) => f.data!),
       sequences: seqState.data!,
       inboxes,
+      inboxTag: inboxTag.trim(),
       apiConfig,
       campaignSettings,
     });
@@ -1017,35 +1019,33 @@ export default function LaunchForm({ onSubmit }: Props) {
                 fileState={masterInboxState as FileState<unknown>}
                 onFile={handleMasterInboxes}
               />
-              {masterInboxState.data && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">Tag filter <span className="text-red-400">*</span></label>
-                  <input
-                    type="text"
-                    value={inboxTag}
-                    onChange={(e) => setInboxTag(e.target.value)}
-                    placeholder="e.g. us-west"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {tagNoMatch && (
-                    <p className="text-xs text-red-400 flex items-start gap-1.5">
-                      <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      No accounts match tag &ldquo;{inboxTag.trim()}&rdquo; — check your master sheet.
-                    </p>
-                  )}
-                  {inboxReady && (
-                    <p className="text-xs text-green-400 flex items-center gap-1.5">
-                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      {filteredInboxes!.length} account{filteredInboxes!.length !== 1 ? "s" : ""} matched
-                      {inboxSkippedCount > 0 && `, ${inboxSkippedCount} duplicate${inboxSkippedCount !== 1 ? "s" : ""} skipped`}
-                    </p>
-                  )}
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-400">Tag filter <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={inboxTag}
+                  onChange={(e) => setInboxTag(e.target.value)}
+                  placeholder="e.g. us-west"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+                {tagNoMatch && (
+                  <p className="text-xs text-red-400 flex items-start gap-1.5">
+                    <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    No accounts match tag &ldquo;{inboxTag.trim()}&rdquo; — check your master sheet.
+                  </p>
+                )}
+                {inboxReady && (
+                  <p className="text-xs text-green-400 flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    {filteredInboxes!.length} account{filteredInboxes!.length !== 1 ? "s" : ""} matched
+                    {inboxSkippedCount > 0 && `, ${inboxSkippedCount} duplicate${inboxSkippedCount !== 1 ? "s" : ""} skipped`}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

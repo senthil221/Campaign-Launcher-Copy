@@ -35,6 +35,7 @@ export default function App() {
         leads: values.leads,
         sequences: values.sequences,
         inboxes: values.inboxes,
+        inboxTag: values.inboxTag,
         campaignSettings: values.campaignSettings,
         apiConfig: values.apiConfig,
         resumeFromStep,

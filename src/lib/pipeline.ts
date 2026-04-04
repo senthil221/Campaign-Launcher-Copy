@@ -51,6 +51,7 @@ export interface PipelineInput {
   leads: LeadRow[];
   sequences: SequenceRow[];
   inboxes: InboxRow[];
+  inboxTag: string;
   campaignSettings: CampaignSettings;
   apiConfig: ApiConfig;
   // For retry
@@ -183,7 +184,7 @@ export async function* runPipeline(
         yield emit({ campaignId });
       }
       s.status = "done";
-      s.detail = `${inboxIds.length} inboxes added`;
+      s.detail = `${inboxIds.length} inboxes added · ${input.inboxTag}`;
       yield emit({ campaignId });
     } catch (err) {
       s.status = "error";

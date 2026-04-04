@@ -58,6 +58,7 @@ export default function Result({
   const leadsAdded   = leadsStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
   const leadsSkipped = leadsStep?.detail?.match(/([\d,]+) skipped/)?.[1] ?? null;
   const inboxCount   = inboxesStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
+  const inboxTag     = inboxesStep?.detail?.match(/· (.+)$/)?.[1] ?? null;
   const seqCount     = seqSteps?.detail?.match(/(\d+) sequence/)?.[1] ?? "—";
   const scheduleDetail = steps.find((s) => s.id === "schedule")?.detail ?? null;
   const parseDetail    = steps.find((s) => s.id === "parse")?.detail ?? null;
@@ -199,7 +200,10 @@ export default function Result({
               </svg>
               <span className="text-sm text-gray-300">Inboxes connected</span>
             </div>
-            <span className="text-sm font-semibold text-white">{inboxCount}</span>
+            <div className="text-right">
+              <span className="text-sm font-semibold text-white">{inboxCount}</span>
+              {inboxTag && <span className="text-xs text-gray-500 ml-1.5">· {inboxTag}</span>}
+            </div>
           </div>
 
           {/* Sequence steps row */}
