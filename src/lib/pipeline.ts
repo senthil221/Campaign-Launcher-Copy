@@ -37,9 +37,15 @@ export interface StepState {
   error?: string;
 }
 
+export interface SkippedLead {
+  email: string;
+  reason: string;
+}
+
 export interface PipelineUpdate {
   steps: StepState[];
   campaignId?: number;
+  skippedLeads?: SkippedLead[];
 }
 
 export interface PipelineInput {
@@ -248,6 +254,7 @@ export async function* runPipeline(
     let totalAdded = 0;
     let totalSkipped = 0;
     let lastError = "";
+    const allSkippedLeads: SkippedLead[] = [];
     try {
       for (let i = 0; i < batches.length; i++) {
         let result: Awaited<ReturnType<typeof uploadLeadBatch>> | null = null;
@@ -265,6 +272,7 @@ export async function* runPipeline(
         if (result) {
           totalAdded += result.added_count ?? batches[i].length;
           totalSkipped += result.skipped_count ?? 0;
+          if (result.skipped_leads?.length) allSkippedLeads.push(...result.skipped_leads);
         }
         s.detail = `batch ${i + 1} of ${batches.length} ✓`;
         yield emit({ campaignId });
@@ -279,7 +287,7 @@ export async function* runPipeline(
         if (totalSkipped > 0) parts.push(`${totalSkipped.toLocaleString()} skipped (block list / duplicates)`);
         s.detail = parts.join(" · ");
       }
-      yield emit({ campaignId });
+      yield emit({ campaignId, skippedLeads: allSkippedLeads });
     } catch (err) {
       s.status = "error";
       s.error = extractErrorMessage(err);

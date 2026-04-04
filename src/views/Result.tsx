@@ -1,4 +1,4 @@
-import type { StepState } from "../lib/pipeline";
+import type { StepState, SkippedLead } from "../lib/pipeline";
 
 interface Props {
   mode: "draft" | "launch";
@@ -6,7 +6,20 @@ interface Props {
   campaignId: number;
   steps: StepState[];
   sendGap: number;
+  skippedLeads: SkippedLead[];
   onReset: () => void;
+}
+
+function downloadSkippedLeads(campaignName: string, leads: SkippedLead[]) {
+  const rows = [["email", "reason"], ...leads.map((l) => [l.email, l.reason])];
+  const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${campaignName.replace(/[^a-z0-9]/gi, "_")}_skipped_leads.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function StatPill({ label, value }: { label: string; value: string | number }) {
@@ -45,6 +58,7 @@ export default function Result({
   campaignId,
   steps,
   sendGap,
+  skippedLeads,
   onReset,
 }: Props) {
   const hasError = steps.some((s) => s.status === "error");
@@ -185,9 +199,21 @@ export default function Result({
                 </svg>
                 <span className="text-sm text-gray-300">Leads skipped</span>
               </div>
-              <div className="text-right">
+              <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-amber-400">{leadsSkipped}</span>
-                <span className="text-xs text-gray-600 ml-1">dupes / blocklist</span>
+                <span className="text-xs text-gray-600">dupes / blocklist</span>
+                {skippedLeads.length > 0 && (
+                  <button
+                    onClick={() => downloadSkippedLeads(campaignName, skippedLeads)}
+                    className="flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-medium transition-colors"
+                    title="Download skipped leads as CSV"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    CSV
+                  </button>
+                )}
               </div>
             </div>
           )}

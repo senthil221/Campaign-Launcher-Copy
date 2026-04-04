@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import LaunchForm, { type FormValues } from "./views/LaunchForm";
 import Progress from "./views/Progress";
 import Result from "./views/Result";
-import { runPipeline, type StepState, type StepId } from "./lib/pipeline";
+import { runPipeline, type StepState, type StepId, type SkippedLead } from "./lib/pipeline";
 
 type View = "form" | "progress" | "result";
 
@@ -12,6 +12,7 @@ interface RunState {
   steps: StepState[];
   campaignId: number;
   formValues: FormValues;
+  skippedLeads: SkippedLead[];
 }
 
 export default function App() {
@@ -42,12 +43,13 @@ export default function App() {
         existingCampaignId,
       });
 
-      let lastUpdate = { steps: [] as StepState[], campaignId: 0 };
+      let lastUpdate = { steps: [] as StepState[], campaignId: 0, skippedLeads: [] as SkippedLead[] };
 
       for await (const update of gen) {
         lastUpdate = {
           steps: update.steps,
           campaignId: update.campaignId ?? lastUpdate.campaignId,
+          skippedLeads: update.skippedLeads ?? lastUpdate.skippedLeads,
         };
         setRunState({
           campaignName: values.campaignName,
@@ -55,6 +57,7 @@ export default function App() {
           steps: update.steps,
           campaignId: update.campaignId ?? lastUpdate.campaignId,
           formValues: values,
+          skippedLeads: update.skippedLeads ?? lastUpdate.skippedLeads,
         });
       }
 
@@ -110,6 +113,7 @@ export default function App() {
         campaignId={runState.campaignId}
         steps={runState.steps}
         sendGap={runState.formValues.campaignSettings.sendGapMinutes}
+        skippedLeads={runState.skippedLeads}
         onReset={handleStartOver}
       />
     );
