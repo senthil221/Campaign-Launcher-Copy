@@ -55,9 +55,14 @@ export default function Result({
   const seqSteps = steps.find((s) => s.id === "sequences");
 
   // Extract counts from step details
-  const leadsCount = leadsStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
-  const inboxCount = inboxesStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
-  const seqCount = seqSteps?.detail?.match(/(\d+) sequence/)?.[1] ?? "—";
+  const leadsAdded   = leadsStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
+  const leadsSkipped = leadsStep?.detail?.match(/([\d,]+) skipped/)?.[1] ?? null;
+  const inboxCount   = inboxesStep?.detail?.match(/^([\d,]+)/)?.[1] ?? "—";
+  const seqCount     = seqSteps?.detail?.match(/(\d+) sequence/)?.[1] ?? "—";
+  const scheduleDetail = steps.find((s) => s.id === "schedule")?.detail ?? null;
+  const parseDetail    = steps.find((s) => s.id === "parse")?.detail ?? null;
+  // Input count from parse step e.g. "2,862 leads · 2 steps · 99 inboxes"
+  const leadsInput   = parseDetail?.match(/^([\d,]+)/)?.[1] ?? null;
 
   const copyErrorReport = () => {
     const report = buildErrorReport(campaignName, campaignId, steps);
@@ -143,12 +148,83 @@ export default function Result({
           <p className="text-sm text-gray-500 mt-0.5">Smartlead ID: {campaignId}</p>
         </div>
 
-        {/* Stats */}
+        {/* Stats pills */}
         <div className="grid grid-cols-4 gap-2">
-          <StatPill label="Leads" value={leadsCount} />
+          <StatPill label="Leads" value={leadsAdded} />
           <StatPill label="Inboxes" value={inboxCount} />
           <StatPill label="Steps" value={seqCount} />
           <StatPill label="Gap" value={`${sendGap}m`} />
+        </div>
+
+        {/* Detailed summary */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800 text-left">
+
+          {/* Leads row */}
+          <div className="px-4 py-3 flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0" />
+              </svg>
+              <span className="text-sm text-gray-300">Leads uploaded</span>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-semibold text-white">{leadsAdded}</span>
+              {leadsInput && leadsInput !== leadsAdded && (
+                <span className="text-xs text-gray-600 ml-1">of {leadsInput}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Skipped leads — only shown if > 0 */}
+          {leadsSkipped && (
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <span className="text-sm text-gray-300">Leads skipped</span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-amber-400">{leadsSkipped}</span>
+                <span className="text-xs text-gray-600 ml-1">dupes / blocklist</span>
+              </div>
+            </div>
+          )}
+
+          {/* Inboxes row */}
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm text-gray-300">Inboxes connected</span>
+            </div>
+            <span className="text-sm font-semibold text-white">{inboxCount}</span>
+          </div>
+
+          {/* Sequence steps row */}
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h10" />
+              </svg>
+              <span className="text-sm text-gray-300">Sequence steps</span>
+            </div>
+            <span className="text-sm font-semibold text-white">{seqCount}</span>
+          </div>
+
+          {/* Schedule row */}
+          {scheduleDetail && (
+            <div className="px-4 py-3 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-gray-300">Schedule</span>
+              </div>
+              <span className="text-xs text-gray-400 text-right max-w-[55%] leading-snug">{scheduleDetail}</span>
+            </div>
+          )}
         </div>
 
         {/* Draft note */}

@@ -27,6 +27,12 @@ export interface InboxRow {
   [key: string]: string;
 }
 
+export interface MasterInboxRow {
+  email: string;
+  tag: string;
+  [key: string]: string;
+}
+
 function parseCSV<T>(file: File): Promise<Papa.ParseResult<T>> {
   return new Promise((resolve, reject) => {
     Papa.parse<T>(file, {
@@ -172,6 +178,31 @@ export async function parseInboxes(
     warnings.push(
       `inboxes.csv has ${rows.length.toLocaleString()} rows — over the 1,500 soft limit. Upload will proceed.`
     );
+  }
+
+  return { data: rows, errors, warnings };
+}
+
+export async function parseMasterInboxes(
+  file: File
+): Promise<ParseResult<MasterInboxRow>> {
+  const result = await parseCSV<MasterInboxRow>(file);
+  const rows = normalizeHeaders(result.data);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (rows.length === 0) {
+    errors.push("master-inboxes.csv is empty.");
+    return { data: [], errors, warnings };
+  }
+
+  const firstRow = rows[0];
+  const missing = (["email", "tag"] as const).filter((col) => !(col in firstRow));
+  if (missing.length > 0) {
+    errors.push(
+      `master-inboxes.csv is missing required column(s): ${missing.map((c) => `"${c}"`).join(", ")}.`
+    );
+    return { data: rows, errors, warnings };
   }
 
   return { data: rows, errors, warnings };

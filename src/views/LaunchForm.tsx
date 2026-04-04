@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import type { LeadRow, SequenceRow, InboxRow } from "../lib/csv";
-import { parseLeads, parseSequences, parseInboxes } from "../lib/csv";
+import type { LeadRow, SequenceRow, InboxRow, MasterInboxRow } from "../lib/csv";
+import { parseLeads, parseSequences, parseMasterInboxes } from "../lib/csv";
 import {
   TEMPLATES,
   PRESET_KEYS,
@@ -777,7 +777,8 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const [leadsFiles, setLeadsFiles] = useState<FileState<LeadRow>[]>([]);
   const [seqState, setSeqState] = useState<FileState<SequenceRow>>(emptyFile);
-  const [inboxState, setInboxState] = useState<FileState<InboxRow>>(emptyFile);
+  const [masterInboxState, setMasterInboxState] = useState<FileState<MasterInboxRow>>(emptyFile);
+  const [inboxTag, setInboxTag] = useState("");
 
   // Sync API config to state on mount (picks up env vars)
   useEffect(() => {
@@ -790,7 +791,8 @@ export default function LaunchForm({ onSubmit }: Props) {
     setLeadsFiles((prev) => [...prev, entry]);
     const result = await parseLeads(file);
     setLeadsFiles((prev) => {
-      const idx = prev.findLastIndex((f) => f.file === file);
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].file === file) { idx = i; break; } }
       if (idx === -1) return prev;
       const next = [...prev];
       next[idx] = { file, ...result, loading: false };
@@ -808,22 +810,48 @@ export default function LaunchForm({ onSubmit }: Props) {
     setSeqState({ file, ...result, loading: false });
   };
 
-  const handleInboxes = async (file: File) => {
-    setInboxState({ file, data: null, errors: [], warnings: [], loading: true });
-    const result = await parseInboxes(file);
-    setInboxState({ file, ...result, loading: false });
+  const handleMasterInboxes = async (file: File) => {
+    setMasterInboxState({ file, data: null, errors: [], warnings: [], loading: true });
+    const result = await parseMasterInboxes(file);
+    setMasterInboxState({ file, ...result, loading: false });
   };
+
+  // Filter master sheet by tag, dedup by email
+  const filteredInboxes = React.useMemo<MasterInboxRow[] | null>(() => {
+    if (!masterInboxState.data || !inboxTag.trim()) return null;
+    const tag = inboxTag.trim().toLowerCase();
+    const seen = new Set<string>();
+    const out: MasterInboxRow[] = [];
+    for (const row of masterInboxState.data) {
+      if (row.tag.toLowerCase() === tag && !seen.has(row.email)) {
+        seen.add(row.email);
+        out.push(row);
+      }
+    }
+    return out;
+  }, [masterInboxState.data, inboxTag]);
+
+  const inboxSkippedCount = React.useMemo(() => {
+    if (!masterInboxState.data || !inboxTag.trim() || filteredInboxes === null) return 0;
+    const tag = inboxTag.trim().toLowerCase();
+    const total = masterInboxState.data.filter((r) => r.tag.toLowerCase() === tag).length;
+    return total - filteredInboxes.length;
+  }, [masterInboxState.data, inboxTag, filteredInboxes]);
+
+  const tagNoMatch = masterInboxState.data !== null && inboxTag.trim().length > 0 && filteredInboxes !== null && filteredInboxes.length === 0;
+  const inboxReady = filteredInboxes !== null && filteredInboxes.length > 0;
 
   const hasErrors =
     leadsFiles.some((f) => f.errors.length > 0) ||
     seqState.errors.length > 0 ||
-    inboxState.errors.length > 0;
+    masterInboxState.errors.length > 0 ||
+    tagNoMatch;
 
   const allFilesReady =
     leadsFiles.length > 0 &&
     leadsFiles.every((f) => f.data !== null && !f.loading) &&
     seqState.data !== null &&
-    inboxState.data !== null;
+    inboxReady;
 
   const canLaunch =
     campaignName.trim().length > 0 &&
@@ -833,6 +861,9 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const handleSubmit = () => {
     if (!canLaunch) return;
+    const inboxes: InboxRow[] = (filteredInboxes ?? []).map((r) => ({
+      email_account_id: r.email,
+    }));
     onSubmit({
       campaignName: campaignName.trim(),
       mode,
@@ -840,7 +871,7 @@ export default function LaunchForm({ onSubmit }: Props) {
       customSchedule,
       leads: leadsFiles.flatMap((f) => f.data!),
       sequences: seqState.data!,
-      inboxes: inboxState.data!,
+      inboxes,
       apiConfig,
       campaignSettings,
     });
@@ -978,13 +1009,44 @@ export default function LaunchForm({ onSubmit }: Props) {
               fileState={seqState as FileState<unknown>}
               onFile={handleSeq}
             />
-            <DropZone
-              label="Inboxes"
-              hint="Required column: Email Account ID"
-              accept=".csv"
-              fileState={inboxState as FileState<unknown>}
-              onFile={handleInboxes}
-            />
+            <div className="space-y-2">
+              <DropZone
+                label="Master Inboxes"
+                hint='Required columns: "email" (account ID), "tag"'
+                accept=".csv"
+                fileState={masterInboxState as FileState<unknown>}
+                onFile={handleMasterInboxes}
+              />
+              {masterInboxState.data && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-400">Tag filter <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    value={inboxTag}
+                    onChange={(e) => setInboxTag(e.target.value)}
+                    placeholder="e.g. us-west"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  {tagNoMatch && (
+                    <p className="text-xs text-red-400 flex items-start gap-1.5">
+                      <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      No accounts match tag &ldquo;{inboxTag.trim()}&rdquo; — check your master sheet.
+                    </p>
+                  )}
+                  {inboxReady && (
+                    <p className="text-xs text-green-400 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      {filteredInboxes!.length} account{filteredInboxes!.length !== 1 ? "s" : ""} matched
+                      {inboxSkippedCount > 0 && `, ${inboxSkippedCount} duplicate${inboxSkippedCount !== 1 ? "s" : ""} skipped`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Schedule template */}
@@ -1059,8 +1121,10 @@ export default function LaunchForm({ onSubmit }: Props) {
             >
               {!apiConfig.apiKey
                 ? "Add API key in Settings to continue"
-                : !allFilesReady
+                : leadsFiles.length === 0 || seqState.data === null || masterInboxState.data === null
                 ? "Upload all 3 files to continue"
+                : masterInboxState.data !== null && !inboxTag.trim()
+                ? "Enter a tag to filter inboxes"
                 : !campaignName.trim()
                 ? "Enter a campaign name to continue"
                 : hasErrors
