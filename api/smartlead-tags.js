@@ -100,8 +100,8 @@ export default async function handler(req, res) {
 
       if (pageAccounts.length < limit) break;
 
-      // Avoid hammering the API on multi-page fetches
-      if (page < maxPages) await sleep(300);
+      // Small pause to avoid hammering the API on multi-page fetches
+      if (page < maxPages) await sleep(100);
     }
 
     const tagMap = new Map();
