@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     return json(res, 500, { error: "Missing SMARTLEAD_JWT in Vercel environment variables." });
   }
 
-  const limit = Math.min(Math.max(Number(req.query.limit || process.env.SMARTLEAD_TAG_FETCH_LIMIT || 500), 10), 1000);
+  const limit = Math.min(Math.max(Number(req.query.limit || process.env.SMARTLEAD_TAG_FETCH_LIMIT || 100), 10), 100);
   const maxPages = Math.min(Math.max(Number(req.query.maxPages || process.env.SMARTLEAD_TAG_MAX_PAGES || 120), 1), 500);
   const endpoint = process.env.SMARTLEAD_INTERNAL_ACCOUNTS_URL || DEFAULT_ACCOUNTS_URL;
   const authHeader = jwt.startsWith("Bearer ") ? jwt : `Bearer ${jwt}`;
