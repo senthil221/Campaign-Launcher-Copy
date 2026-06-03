@@ -12,8 +12,13 @@ export interface SmartleadTagAccount {
 export interface SmartleadTag {
   name: string;
   count: number;
+  activeCount: number;
   domains: number;
   accounts: SmartleadTagAccount[];
+}
+
+export function isActiveAccount(a: SmartleadTagAccount): boolean {
+  return !/paused|stopped|disconnect|error|reconnect/i.test(a.status);
 }
 
 export interface SmartleadTagsResponse {
@@ -145,6 +150,7 @@ export async function fetchSmartleadTags(
     .map((t) => ({
       name: t.name,
       count: t.accounts.length,
+      activeCount: t.accounts.filter(isActiveAccount).length,
       domains: t._domains.size,
       accounts: t.accounts.sort((a, b) => a.email.localeCompare(b.email)),
     }))

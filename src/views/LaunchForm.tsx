@@ -16,7 +16,7 @@ import {
   saveCampaignSettings,
   type CampaignSettings,
 } from "../lib/config";
-import { fetchSmartleadTags, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
+import { fetchSmartleadTags, isActiveAccount, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -554,9 +554,10 @@ function TagPicker({ tags, selectedTag, query, loading, progress, error, onQuery
                 className={`w-full rounded px-2.5 py-2 text-left transition-colors ${active ? "bg-blue-500/10 border border-blue-500/40" : "border border-transparent hover:bg-zinc-800/60"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className={`text-[12px] font-medium truncate ${active ? "text-blue-200" : "text-zinc-300"}`}>{tag.name}</span>
-                  {tag.count != null && (
-                    <span className={`font-mono text-[11px] shrink-0 ${active ? "text-blue-300" : "text-zinc-500"}`}>{tag.count}</span>
-                  )}
+                  <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                    <span className={tag.activeCount === tag.count ? (active ? "text-blue-300" : "text-emerald-500") : "text-emerald-500"}>{tag.activeCount}</span>
+                    <span className={active ? "text-blue-500/50" : "text-zinc-700"}>/{tag.count}</span>
+                  </span>
                 </div>
               </button>
             );
@@ -569,15 +570,19 @@ function TagPicker({ tags, selectedTag, query, loading, progress, error, onQuery
 
 // ── Selected tag health panel ─────────────────────────────────────────────────
 
-function SelectedTagPanel({ tagName, accounts, domainCount, avgRep, loading, error }: {
+function SelectedTagPanel({ tagName, accounts, allAccounts, domainCount, avgRep, loading, error, activeOnly, onActiveOnlyChange }: {
   tagName: string;
   accounts: SmartleadTagAccount[];
+  allAccounts: SmartleadTagAccount[];
   domainCount: number;
   avgRep: number | null;
   loading: boolean;
   error: string;
+  activeOnly: boolean;
+  onActiveOnlyChange: (v: boolean) => void;
 }) {
-  const health = tagHealthStats(accounts);
+  const health = tagHealthStats(allAccounts);
+  const inactiveCount = allAccounts.length - allAccounts.filter(isActiveAccount).length;
 
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 space-y-2.5">
@@ -605,7 +610,12 @@ function SelectedTagPanel({ tagName, accounts, domainCount, avgRep, loading, err
         <>
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { label: "accounts", value: accounts.length.toLocaleString() },
+              {
+                label: "inboxes",
+                value: activeOnly && inactiveCount > 0
+                  ? `${accounts.length.toLocaleString()} / ${allAccounts.length.toLocaleString()}`
+                  : accounts.length.toLocaleString(),
+              },
               { label: "domains", value: domainCount.toLocaleString() },
               { label: "avg rep", value: avgRep !== null ? `${avgRep}%` : "—" },
             ].map(({ label, value }) => (
@@ -615,11 +625,21 @@ function SelectedTagPanel({ tagName, accounts, domainCount, avgRep, loading, err
               </div>
             ))}
           </div>
-          {health.total > 0 && (
-            <div className="space-y-1">
-              {health.lowRep > 0 && <p className="text-[11px] text-amber-600/90">⚠ {health.lowRep} account{health.lowRep !== 1 ? "s" : ""} below 70% warmup reputation</p>}
-              {health.inactive > 0 && <p className="text-[11px] text-amber-600/90">⚠ {health.inactive} account{health.inactive !== 1 ? "s" : ""} paused or stopped</p>}
+
+          <div className="flex items-center justify-between pt-0.5">
+            <div className="space-y-0.5">
+              <p className="text-[12px] text-zinc-300">Active accounts only</p>
+              {inactiveCount > 0 && (
+                <p className="text-[10px] text-zinc-600">
+                  {inactiveCount} paused / disconnected {activeOnly ? "excluded" : "included"}
+                </p>
+              )}
             </div>
+            <Toggle checked={activeOnly} onChange={onActiveOnlyChange} />
+          </div>
+
+          {health.lowRep > 0 && (
+            <p className="text-[11px] text-amber-600/90">⚠ {health.lowRep} account{health.lowRep !== 1 ? "s" : ""} below 70% warmup reputation</p>
           )}
         </>
       )}
@@ -647,6 +667,7 @@ export default function LaunchForm({ onSubmit }: Props) {
   const [tagQuery, setTagQuery] = useState("");
   const [selectedTagName, setSelectedTagName] = useState("");
   const [fetchedAt, setFetchedAt] = useState("");
+  const [activeOnly, setActiveOnly] = useState(true);
 
   const refreshTags = useCallback(async (force = false) => {
     setTagsLoading(true);
@@ -686,7 +707,11 @@ export default function LaunchForm({ onSubmit }: Props) {
   };
 
   const selectedTag = useMemo(() => tags.find((t) => t.name === selectedTagName) ?? null, [selectedTagName, tags]);
-  const selectedAccounts = selectedTag?.accounts ?? [];
+  const allSelectedAccounts = selectedTag?.accounts ?? [];
+  const selectedAccounts = useMemo(
+    () => activeOnly ? allSelectedAccounts.filter(isActiveAccount) : allSelectedAccounts,
+    [allSelectedAccounts, activeOnly]
+  );
   const selectedDomains = useMemo(() => new Set(selectedAccounts.map((a) => a.domain).filter(Boolean)).size, [selectedAccounts]);
   const selectedAvgRep = useMemo(() => {
     const reps = selectedAccounts.map((a) => a.reputation).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
@@ -859,8 +884,11 @@ export default function LaunchForm({ onSubmit }: Props) {
                 <SelectedTagPanel
                   tagName={selectedTag.name}
                   accounts={selectedAccounts}
+                  allAccounts={allSelectedAccounts}
                   domainCount={selectedDomains}
                   avgRep={selectedAvgRep}
+                  activeOnly={activeOnly}
+                  onActiveOnlyChange={setActiveOnly}
                   loading={false}
                   error=""
                 />
