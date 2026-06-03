@@ -65,7 +65,7 @@ function normalizeAccount(raw: Record<string, unknown>): SmartleadTagAccount {
     dailyLimit: (raw.message_per_day ?? raw.daily_limit ?? raw.max_email_per_day ?? null) as number | null,
     dailySent: (raw.daily_sent_count ?? raw.sent_count ?? null) as number | null,
     reputation,
-    status: [raw.warmup_status, raw.connection_status, raw.status]
+    status: [raw.smtp_connection_status, raw.imap_connection_status, raw.connection_status]
       .filter(Boolean)
       .join("|"),
   };
