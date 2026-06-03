@@ -18,7 +18,7 @@ import {
   type ApiConfig,
   type CampaignSettings,
 } from "../lib/config";
-import { fetchSmartleadTags, type SmartleadTag } from "../lib/tags";
+import { fetchSmartleadTags, fetchTagAccounts, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,11 +64,11 @@ function substituteVars(text: string, lead: LeadRow | null): string {
   return text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => ctx[key] || `{{${key}}}`);
 }
 
-function tagHealthStats(tag: SmartleadTag) {
-  const lowRep = tag.accounts.filter(
+function tagHealthStats(accounts: SmartleadTagAccount[]) {
+  const lowRep = accounts.filter(
     (a) => a.reputation !== null && (a.reputation as number) < 70
   ).length;
-  const inactive = tag.accounts.filter((a) =>
+  const inactive = accounts.filter((a) =>
     /paused|stopped/i.test(a.status)
   ).length;
   return { lowRep, inactive, total: lowRep + inactive };
@@ -520,7 +520,7 @@ function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect
       <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-zinc-800">
         <div>
           <p className="text-[12px] font-semibold text-zinc-200">Inbox tag</p>
-          <p className="text-[10px] text-zinc-600 mt-px">Pulled from Smartlead via JWT · server-side</p>
+          <p className="text-[10px] text-zinc-600 mt-px">Select a tag · accounts load on selection</p>
         </div>
         <button onClick={onRefresh} disabled={loading}
           className="h-6 px-2.5 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-40 transition-colors shrink-0">
@@ -543,26 +543,14 @@ function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect
             <div className="py-6 text-center text-[12px] text-zinc-600">No tags found</div>
           ) : filtered.map((tag) => {
             const active = selectedTag === tag.name;
-            const health = tagHealthStats(tag);
             return (
               <button key={tag.name} type="button" onClick={() => onSelect(tag.name)}
                 className={`w-full rounded px-2.5 py-2 text-left transition-colors ${active ? "bg-blue-500/10 border border-blue-500/40" : "border border-transparent hover:bg-zinc-800/60"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className={`text-[12px] font-medium truncate ${active ? "text-blue-200" : "text-zinc-300"}`}>{tag.name}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {health.total > 0 && (
-                      <span className="flex items-center gap-1 text-[10px] text-amber-500/80 font-medium">
-                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                        {health.total}
-                      </span>
-                    )}
-                    <span className={`font-mono text-[11px] ${active ? "text-blue-300" : "text-zinc-500"}`}>{tag.count}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-zinc-600">{tag.domains} domain{tag.domains !== 1 ? "s" : ""}</span>
-                  {health.lowRep > 0 && <span className="text-[10px] text-amber-600">{health.lowRep} low rep</span>}
-                  {health.inactive > 0 && <span className="text-[10px] text-amber-600">{health.inactive} paused</span>}
+                  {tag.count != null && (
+                    <span className={`font-mono text-[11px] shrink-0 ${active ? "text-blue-300" : "text-zinc-500"}`}>{tag.count}</span>
+                  )}
                 </div>
               </button>
             );
@@ -575,17 +563,24 @@ function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect
 
 // ── Selected tag health panel ─────────────────────────────────────────────────
 
-function SelectedTagPanel({ tag, avgRep, domainCount }: { tag: SmartleadTag; avgRep: number | null; domainCount: number }) {
-  const health = tagHealthStats(tag);
+function SelectedTagPanel({ tagName, accounts, domainCount, avgRep, loading, error }: {
+  tagName: string;
+  accounts: SmartleadTagAccount[];
+  domainCount: number;
+  avgRep: number | null;
+  loading: boolean;
+  error: string;
+}) {
+  const health = tagHealthStats(accounts);
 
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 space-y-2.5">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600 font-semibold">Selected tag</p>
-          <p className="text-[13px] font-semibold text-zinc-100 mt-0.5 truncate">{tag.name}</p>
+          <p className="text-[13px] font-semibold text-zinc-100 mt-0.5 truncate">{tagName}</p>
         </div>
-        {health.total > 0 && (
+        {!loading && health.total > 0 && (
           <span className="shrink-0 flex items-center gap-1 text-[10px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5">
             <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
             {health.total} at-risk
@@ -593,32 +588,34 @@ function SelectedTagPanel({ tag, avgRep, domainCount }: { tag: SmartleadTag; avg
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
-        {[
-          { label: "accounts", value: tag.accounts.length.toLocaleString() },
-          { label: "domains", value: domainCount.toLocaleString() },
-          { label: "avg rep", value: avgRep !== null ? `${avgRep}%` : "—" },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded bg-zinc-900 px-2 py-1.5 text-center">
-            <p className="font-mono text-[13px] font-medium text-zinc-100">{value}</p>
-            <p className="text-[9px] uppercase tracking-wide text-zinc-600 mt-px">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {health.total > 0 && (
-        <div className="space-y-1">
-          {health.lowRep > 0 && (
-            <p className="text-[11px] text-amber-600/90">
-              ⚠ {health.lowRep} account{health.lowRep !== 1 ? "s" : ""} below 70% warmup reputation
-            </p>
-          )}
-          {health.inactive > 0 && (
-            <p className="text-[11px] text-amber-600/90">
-              ⚠ {health.inactive} account{health.inactive !== 1 ? "s" : ""} paused or stopped
-            </p>
-          )}
+      {loading ? (
+        <div className="flex items-center gap-2 text-[11px] text-zinc-600 py-1">
+          <span className="h-3 w-3 rounded-full border border-zinc-700 border-t-blue-400 animate-spin" />
+          Loading accounts…
         </div>
+      ) : error ? (
+        <p className="text-[11px] text-red-400">{error}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              { label: "accounts", value: accounts.length.toLocaleString() },
+              { label: "domains", value: domainCount.toLocaleString() },
+              { label: "avg rep", value: avgRep !== null ? `${avgRep}%` : "—" },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded bg-zinc-900 px-2 py-1.5 text-center">
+                <p className="font-mono text-[13px] font-medium text-zinc-100">{value}</p>
+                <p className="text-[9px] uppercase tracking-wide text-zinc-600 mt-px">{label}</p>
+              </div>
+            ))}
+          </div>
+          {health.total > 0 && (
+            <div className="space-y-1">
+              {health.lowRep > 0 && <p className="text-[11px] text-amber-600/90">⚠ {health.lowRep} account{health.lowRep !== 1 ? "s" : ""} below 70% warmup reputation</p>}
+              {health.inactive > 0 && <p className="text-[11px] text-amber-600/90">⚠ {health.inactive} account{health.inactive !== 1 ? "s" : ""} paused or stopped</p>}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -645,6 +642,11 @@ export default function LaunchForm({ onSubmit }: Props) {
   const [selectedTagName, setSelectedTagName] = useState("");
   const [fetchedAt, setFetchedAt] = useState("");
 
+  // Accounts loaded on-demand when a tag is selected
+  const [tagAccounts, setTagAccounts] = useState<SmartleadTagAccount[]>([]);
+  const [tagAccountsLoading, setTagAccountsLoading] = useState(false);
+  const [tagAccountsError, setTagAccountsError] = useState("");
+
   const refreshTags = useCallback(async (force = false) => {
     setTagsLoading(true);
     setTagsError("");
@@ -662,11 +664,29 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   useEffect(() => { void refreshTags(false); }, [refreshTags]);
 
+  const handleSelectTag = useCallback(async (name: string) => {
+    setSelectedTagName(name);
+    if (!name) { setTagAccounts([]); return; }
+    const tag = tags.find((t) => t.name === name);
+    if (!tag?.id) { setTagAccountsError("Tag has no ID — cannot load accounts."); return; }
+    setTagAccounts([]);
+    setTagAccountsLoading(true);
+    setTagAccountsError("");
+    try {
+      const result = await fetchTagAccounts(tag.id);
+      setTagAccounts(result.accounts);
+    } catch (err) {
+      setTagAccountsError(err instanceof Error ? err.message : "Failed to load accounts.");
+    } finally {
+      setTagAccountsLoading(false);
+    }
+  }, [tags]);
+
   const handleAddLeads = async (file: File) => {
     setLeadsFiles((prev) => [...prev, { file, data: null, errors: [], warnings: [], loading: true }]);
     const result = await parseLeads(file);
     setLeadsFiles((prev) => {
-      const idx = prev.findLastIndex((item) => item.file === file);
+      let idx = -1; for (let i = prev.length - 1; i >= 0; i--) { if (prev[i].file === file) { idx = i; break; } }
       if (idx === -1) return prev;
       const next = [...prev];
       next[idx] = { file, ...result, loading: false };
@@ -680,8 +700,7 @@ export default function LaunchForm({ onSubmit }: Props) {
     setSeqState({ file, ...result, loading: false });
   };
 
-  const selectedTag = useMemo(() => tags.find((t) => t.name === selectedTagName) ?? null, [selectedTagName, tags]);
-  const selectedAccounts = selectedTag?.accounts ?? [];
+  const selectedAccounts = tagAccounts;
   const selectedDomains = useMemo(() => new Set(selectedAccounts.map((a) => a.domain).filter(Boolean)).size, [selectedAccounts]);
   const selectedAvgRep = useMemo(() => {
     const reps = selectedAccounts.map((a) => a.reputation).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
@@ -699,7 +718,7 @@ export default function LaunchForm({ onSubmit }: Props) {
   const totalLeads = leadsFiles.reduce((s, f) => s + (f.data?.length ?? 0), 0);
   const sequenceCount = seqState.data?.length ?? 0;
   const inboxRequired = mode === "launch";
-  const inboxReady = selectedAccounts.length > 0;
+  const inboxReady = selectedAccounts.length > 0 && !tagAccountsLoading;
   const hasErrors = leadsFiles.some((f) => f.errors.length > 0) || seqState.errors.length > 0;
   const canSubmit = campaignName.trim().length > 0 && leadsReady && sequenceReady && !hasErrors && (inboxReady || !inboxRequired);
 
@@ -848,12 +867,19 @@ export default function LaunchForm({ onSubmit }: Props) {
 
               {/* Tag picker */}
               <TagPicker tags={tags} selectedTag={selectedTagName} query={tagQuery} loading={tagsLoading}
-                error={tagsError} onQuery={setTagQuery} onSelect={setSelectedTagName}
+                error={tagsError} onQuery={setTagQuery} onSelect={handleSelectTag}
                 onRefresh={() => { void refreshTags(true); }} />
 
-              {/* Selected tag health */}
-              {selectedTag && (
-                <SelectedTagPanel tag={selectedTag} avgRep={selectedAvgRep} domainCount={selectedDomains} />
+              {/* Selected tag health — loads on demand */}
+              {selectedTagName && (
+                <SelectedTagPanel
+                  tagName={selectedTagName}
+                  accounts={tagAccounts}
+                  domainCount={selectedDomains}
+                  avgRep={selectedAvgRep}
+                  loading={tagAccountsLoading}
+                  error={tagAccountsError}
+                />
               )}
 
               {/* Launch check */}
