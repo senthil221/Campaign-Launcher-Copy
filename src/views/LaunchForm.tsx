@@ -500,11 +500,12 @@ function CustomScheduleEditor({ schedule, onChange }: { schedule: ScheduleTempla
 
 // ── Tag picker ────────────────────────────────────────────────────────────────
 
-function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect, onRefresh }: {
+function TagPicker({ tags, selectedTag, query, loading, progress, error, onQuery, onSelect, onRefresh }: {
   tags: SmartleadTag[];
   selectedTag: string;
   query: string;
   loading: boolean;
+  progress: number;
   error: string;
   onQuery: (v: string) => void;
   onSelect: (v: string) => void;
@@ -538,7 +539,15 @@ function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect
 
         <div className="max-h-[300px] space-y-1 overflow-y-auto pr-0.5 scrollbar-thin">
           {loading && tags.length === 0 ? (
-            <div className="py-6 text-center text-[12px] text-zinc-600">Loading tags…</div>
+            <div className="py-5 text-center space-y-1.5">
+              <div className="flex items-center justify-center gap-2 text-[12px] text-zinc-500">
+                <span className="h-3 w-3 rounded-full border border-zinc-700 border-t-blue-400 animate-spin" />
+                {progress > 0 ? `${progress.toLocaleString()} accounts scanned…` : "Connecting to Smartlead…"}
+              </div>
+              {progress > 0 && (
+                <p className="text-[10px] text-zinc-700">Building tag index — this runs once then caches</p>
+              )}
+            </div>
           ) : filtered.length === 0 ? (
             <div className="py-6 text-center text-[12px] text-zinc-600">No tags found</div>
           ) : filtered.map((tag) => {
@@ -637,6 +646,7 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const [tags, setTags] = useState<SmartleadTag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsProgress, setTagsProgress] = useState(0);
   const [tagsError, setTagsError] = useState("");
   const [tagQuery, setTagQuery] = useState("");
   const [selectedTagName, setSelectedTagName] = useState("");
@@ -644,9 +654,10 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   const refreshTags = useCallback(async (force = false) => {
     setTagsLoading(true);
+    setTagsProgress(0);
     setTagsError("");
     try {
-      const result = await fetchSmartleadTags(force);
+      const result = await fetchSmartleadTags(force, (loaded) => setTagsProgress(loaded));
       setTags(result.tags);
       setFetchedAt(result.fetchedAt);
       setSelectedTagName((cur) => cur && result.tags.some((t) => t.name === cur) ? cur : "");
@@ -654,6 +665,7 @@ export default function LaunchForm({ onSubmit }: Props) {
       setTagsError(err instanceof Error ? err.message : "Unable to fetch tags.");
     } finally {
       setTagsLoading(false);
+      setTagsProgress(0);
     }
   }, []);
 
@@ -749,7 +761,7 @@ export default function LaunchForm({ onSubmit }: Props) {
               </div>
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full ${tagsError ? "bg-red-400" : tagsLoading ? "bg-amber-400 animate-pulse" : tags.length > 0 ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                <span className="text-[11px] text-zinc-500">{tagsLoading ? "Syncing tags…" : tagsError ? "Tag error" : tags.length > 0 ? `${tags.length} tags` : "No tags"}</span>
+                <span className="text-[11px] text-zinc-500">{tagsLoading ? (tagsProgress > 0 ? `${tagsProgress.toLocaleString()} accounts…` : "Connecting…") : tagsError ? "Tag error" : tags.length > 0 ? `${tags.length} tags` : "No tags"}</span>
               </div>
               <button onClick={() => setDrawerOpen(true)}
                 className="h-6 px-2.5 rounded border border-zinc-800 text-[11px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 transition-colors">
@@ -845,7 +857,7 @@ export default function LaunchForm({ onSubmit }: Props) {
 
               {/* Tag picker */}
               <TagPicker tags={tags} selectedTag={selectedTagName} query={tagQuery} loading={tagsLoading}
-                error={tagsError} onQuery={setTagQuery} onSelect={setSelectedTagName}
+                progress={tagsProgress} error={tagsError} onQuery={setTagQuery} onSelect={setSelectedTagName}
                 onRefresh={() => { void refreshTags(true); }} />
 
               {selectedTag && (

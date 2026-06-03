@@ -23,16 +23,121 @@ export interface SmartleadTagsResponse {
   tags: SmartleadTag[];
 }
 
-export async function fetchSmartleadTags(refresh = false): Promise<SmartleadTagsResponse> {
-  const url = refresh ? "/api/smartlead-tags?refresh=1" : "/api/smartlead-tags";
-  const res = await fetch(url, { cache: refresh ? "no-store" : "default" });
-  const data = await res.json().catch(() => null);
+const LIMIT = 100;
+const BATCH = 10; // concurrent pages per round
+
+function normalizeTagName(mapping: Record<string, unknown>): string {
+  return String(
+    (mapping?.tag as Record<string, unknown>)?.name ||
+    (mapping?.email_account_tag as Record<string, unknown>)?.name ||
+    (mapping?.emailAccountTag as Record<string, unknown>)?.name ||
+    mapping?.name ||
+    mapping?.tag_name ||
+    ""
+  ).trim();
+}
+
+function normalizeAccount(raw: Record<string, unknown>): SmartleadTagAccount {
+  const email = String(raw.from_email || raw.email || raw.username || "");
+  const domain = email.includes("@") ? email.split("@").pop()! : "";
+  const repRaw = (raw?.warmup_details as Record<string, unknown>)?.warmup_reputation ?? raw?.warmup_reputation ?? null;
+  const reputation =
+    typeof repRaw === "string" ? Number((repRaw as string).replace("%", ""))
+    : typeof repRaw === "number" ? repRaw
+    : null;
+
+  return {
+    id: Number(raw.id),
+    email,
+    domain,
+    fromName: String(raw.from_name || ""),
+    dailyLimit: (raw.message_per_day ?? raw.daily_limit ?? raw.max_email_per_day ?? null) as number | null,
+    dailySent: (raw.daily_sent_count ?? raw.sent_count ?? null) as number | null,
+    reputation,
+    status: String(raw.warmup_status || raw.status || raw.connection_status || ""),
+  };
+}
+
+async function fetchPage(offset: number): Promise<Record<string, unknown>[]> {
+  const res = await fetch(`/api/smartlead-tags?offset=${offset}`, { cache: "no-store" });
 
   if (!res.ok) {
-    const message = data?.error || data?.message || `Tag fetch failed with HTTP ${res.status}`;
+    const data = await res.json().catch(() => null);
+    const msg = data?.error || data?.message || `Fetch failed with HTTP ${res.status}`;
     const detail = data?.detail ? ` — ${data.detail}` : "";
-    throw new Error(`${message}${detail}`);
+    throw new Error(`${msg}${detail}`);
   }
 
-  return data as SmartleadTagsResponse;
+  const payload = await res.json();
+  const accounts = payload?.data?.email_accounts || payload?.email_accounts || payload?.data || [];
+  return Array.isArray(accounts) ? accounts : [accounts].filter(Boolean);
+}
+
+export async function fetchSmartleadTags(
+  _refresh = false,
+  onProgress?: (loaded: number) => void
+): Promise<SmartleadTagsResponse> {
+  const all: Record<string, unknown>[] = [];
+  let offset = 0;
+  let done = false;
+
+  while (!done) {
+    const offsets: number[] = [];
+    for (let i = 0; i < BATCH; i++, offset += LIMIT) offsets.push(offset);
+
+    const pages = await Promise.all(offsets.map(fetchPage));
+
+    for (const page of pages) {
+      all.push(...page);
+      if (page.length < LIMIT) { done = true; break; }
+    }
+
+    onProgress?.(all.length);
+  }
+
+  // Build tag map
+  const tagMap = new Map<string, { name: string; accounts: SmartleadTagAccount[]; _ids: Set<number>; _domains: Set<string> }>();
+
+  for (const raw of all) {
+    const account = normalizeAccount(raw);
+    if (!Number.isFinite(account.id)) continue;
+
+    const mappings = Array.isArray(raw.email_account_tag_mappings)
+      ? (raw.email_account_tag_mappings as Record<string, unknown>[])
+      : Array.isArray(raw.tags)
+        ? (raw.tags as Record<string, unknown>[])
+        : [];
+
+    for (const mapping of mappings) {
+      const name = normalizeTagName(mapping);
+      if (!name) continue;
+
+      if (!tagMap.has(name)) {
+        tagMap.set(name, { name, accounts: [], _ids: new Set(), _domains: new Set() });
+      }
+
+      const tag = tagMap.get(name)!;
+      if (tag._ids.has(account.id)) continue;
+
+      tag._ids.add(account.id);
+      if (account.domain) tag._domains.add(account.domain);
+      tag.accounts.push(account);
+    }
+  }
+
+  const tags: SmartleadTag[] = [...tagMap.values()]
+    .map((t) => ({
+      name: t.name,
+      count: t.accounts.length,
+      domains: t._domains.size,
+      accounts: t.accounts.sort((a, b) => a.email.localeCompare(b.email)),
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    totalAccounts: all.length,
+    totalTags: tags.length,
+    tags,
+  };
 }
