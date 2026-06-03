@@ -176,7 +176,10 @@ export async function* runPipeline(
 
   if (startIndex <= STEP_ORDER.indexOf("inboxes")) {
     const s = step("inboxes");
-    const inboxIds = parseInboxIds(input.inboxes);
+    const allInboxIds = parseInboxIds(input.inboxes);
+    const INBOX_LIMIT = 2500;
+    const inboxIds = allInboxIds.slice(0, INBOX_LIMIT);
+    const trimmed = allInboxIds.length - inboxIds.length;
     if (inboxIds.length === 0) {
       s.status = "skipped";
       s.detail = "none — skipped for draft";
@@ -192,7 +195,9 @@ export async function* runPipeline(
           yield emit({ campaignId });
         }
         s.status = "done";
-        s.detail = `${inboxIds.length} inboxes added · ${input.inboxTag}`;
+        s.detail = trimmed > 0
+          ? `${inboxIds.length} inboxes added · ${trimmed} trimmed (2500 limit) · ${input.inboxTag}`
+          : `${inboxIds.length} inboxes added · ${input.inboxTag}`;
         yield emit({ campaignId });
       } catch (err) {
         s.status = "error";
