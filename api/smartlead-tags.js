@@ -54,6 +54,8 @@ export default async function handler(req, res) {
   const endpoint = process.env.SMARTLEAD_INTERNAL_ACCOUNTS_URL || DEFAULT_ACCOUNTS_URL;
   const authHeader = jwt.startsWith("Bearer ") ? jwt : `Bearer ${jwt}`;
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
   try {
     const all = [];
     let offset = 0;
@@ -64,12 +66,19 @@ export default async function handler(req, res) {
       url.searchParams.set("offset", String(offset));
       url.searchParams.set("limit", String(limit));
 
-      const upstream = await fetch(url, {
-        headers: {
-          Authorization: authHeader,
-          Accept: "application/json",
-        },
-      });
+      let upstream;
+      // Retry once on 429 after the indicated wait (or 65s default)
+      for (let attempt = 0; attempt < 2; attempt++) {
+        upstream = await fetch(url, {
+          headers: {
+            Authorization: authHeader,
+            Accept: "application/json",
+          },
+        });
+        if (upstream.status !== 429) break;
+        const retryAfter = Number(upstream.headers.get("Retry-After") || 65);
+        await sleep(Math.min(retryAfter, 65) * 1000);
+      }
 
       if (!upstream.ok) {
         const text = await upstream.text();
@@ -90,6 +99,9 @@ export default async function handler(req, res) {
       offset += limit;
 
       if (pageAccounts.length < limit) break;
+
+      // Avoid hammering the API on multi-page fetches
+      if (page < maxPages) await sleep(300);
     }
 
     const tagMap = new Map();
