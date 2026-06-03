@@ -18,7 +18,7 @@ export interface SmartleadTag {
 }
 
 export function isActiveAccount(a: SmartleadTagAccount): boolean {
-  return !/paused|stopped|disconnect|error|reconnect/i.test(a.status);
+  return !/paused|stopped|disconnect|error|reconnect|failure|smtp/i.test(a.status);
 }
 
 export interface SmartleadTagsResponse {
@@ -65,7 +65,9 @@ function normalizeAccount(raw: Record<string, unknown>): SmartleadTagAccount {
     dailyLimit: (raw.message_per_day ?? raw.daily_limit ?? raw.max_email_per_day ?? null) as number | null,
     dailySent: (raw.daily_sent_count ?? raw.sent_count ?? null) as number | null,
     reputation,
-    status: String(raw.warmup_status || raw.status || raw.connection_status || ""),
+    status: [raw.warmup_status, raw.connection_status, raw.status]
+      .filter(Boolean)
+      .join("|"),
   };
 }
 
