@@ -1,15 +1,32 @@
-import axios from "axios";
 import type { SequenceRow, LeadRow, InboxRow } from "./csv";
 import type { ScheduleTemplate } from "./templates";
-import type { CampaignSettings, ApiConfig } from "./config";
+import type { CampaignSettings } from "./config";
 import { settingsToApiPayload } from "./config";
 
-// ── Client factory — reads fresh config on each pipeline run ──────────────────
+// ── Proxy helper — API key lives in Vercel env, never in the browser ──────────
 
-function makeClient(cfg: ApiConfig) {
-  const client = axios.create({ baseURL: cfg.baseUrl });
-  const p = () => ({ api_key: cfg.apiKey });
-  return { client, p };
+async function call<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const res = await fetch("/api/smartlead", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method, path, body }),
+  });
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const msg =
+      (data as Record<string, unknown> | null)?.error ||
+      (data as Record<string, unknown> | null)?.message ||
+      `Request failed with HTTP ${res.status}`;
+    throw new Error(String(msg));
+  }
+
+  return data as T;
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -21,25 +38,11 @@ export interface CreateCampaignResponse {
 
 // ── API calls ─────────────────────────────────────────────────────────────────
 
-export async function createCampaign(
-  name: string,
-  cfg: ApiConfig
-): Promise<CreateCampaignResponse> {
-  const { client, p } = makeClient(cfg);
-  const { data } = await client.post<CreateCampaignResponse>(
-    "/campaigns/create",
-    { name },
-    { params: p() }
-  );
-  return data;
+export async function createCampaign(name: string): Promise<CreateCampaignResponse> {
+  return call<CreateCampaignResponse>("POST", "/campaigns/create", { name });
 }
 
-export async function saveSequences(
-  campaignId: number,
-  rows: SequenceRow[],
-  cfg: ApiConfig
-): Promise<void> {
-  const { client, p } = makeClient(cfg);
+export async function saveSequences(campaignId: number, rows: SequenceRow[]): Promise<void> {
   const sequences = rows
     .filter((r) => Number.isInteger(Number(r.seq_number)) && Number(r.seq_number) >= 1)
     .map((r) => ({
@@ -48,58 +51,32 @@ export async function saveSequences(
       email_body: r.body.replace(/\r?\n/g, "<br>"),
       seq_delay_details: { delay_in_days: Number(r.delay_days) },
     }));
-  await client.post(
-    `/campaigns/${campaignId}/sequences`,
-    { sequences },
-    { params: p() }
-  );
+  await call("POST", `/campaigns/${campaignId}/sequences`, { sequences });
 }
 
-export async function addInboxBatch(
-  campaignId: number,
-  emailAccountIds: number[],
-  cfg: ApiConfig
-): Promise<void> {
-  const { client, p } = makeClient(cfg);
-  await client.post(
-    `/campaigns/${campaignId}/email-accounts`,
-    { email_account_ids: emailAccountIds },
-    { params: p() }
-  );
+export async function addInboxBatch(campaignId: number, emailAccountIds: number[]): Promise<void> {
+  await call("POST", `/campaigns/${campaignId}/email-accounts`, {
+    email_account_ids: emailAccountIds,
+  });
 }
 
 export async function setSchedule(
   campaignId: number,
   template: ScheduleTemplate,
-  sendGapMinutes: number,
-  cfg: ApiConfig
+  sendGapMinutes: number
 ): Promise<void> {
-  const { client, p } = makeClient(cfg);
-  await client.post(
-    `/campaigns/${campaignId}/schedule`,
-    {
-      timezone: template.timezone,
-      days_of_the_week: template.days,
-      start_hour: template.start,
-      end_hour: template.end,
-      min_time_btw_emails: sendGapMinutes,
-      max_new_leads_per_day: template.maxLeads,
-    },
-    { params: p() }
-  );
+  await call("POST", `/campaigns/${campaignId}/schedule`, {
+    timezone: template.timezone,
+    days_of_the_week: template.days,
+    start_hour: template.start,
+    end_hour: template.end,
+    min_time_btw_emails: sendGapMinutes,
+    max_new_leads_per_day: template.maxLeads,
+  });
 }
 
-export async function applySettings(
-  campaignId: number,
-  settings: CampaignSettings,
-  cfg: ApiConfig
-): Promise<void> {
-  const { client, p } = makeClient(cfg);
-  await client.post(
-    `/campaigns/${campaignId}/settings`,
-    settingsToApiPayload(settings),
-    { params: p() }
-  );
+export async function applySettings(campaignId: number, settings: CampaignSettings): Promise<void> {
+  await call("POST", `/campaigns/${campaignId}/settings`, settingsToApiPayload(settings));
 }
 
 export interface UploadLeadBatchResult {
@@ -110,10 +87,8 @@ export interface UploadLeadBatchResult {
 
 export async function uploadLeadBatch(
   campaignId: number,
-  leads: LeadRow[],
-  cfg: ApiConfig
+  leads: LeadRow[]
 ): Promise<UploadLeadBatchResult> {
-  const { client, p } = makeClient(cfg);
   const ALLOWED = new Set(["email", "first_name", "last_name", "company_name", "location"]);
   const lead_list = leads.map((lead) => {
     const clean: Record<string, string> = {};
@@ -123,31 +98,18 @@ export async function uploadLeadBatch(
     return clean;
   });
 
-  const { data } = await client.post<UploadLeadBatchResult>(
-    `/campaigns/${campaignId}/leads`,
-    {
-      lead_list,
-      settings: {
-        ignore_global_block_list: false,
-        ignore_unsubscribe_list: false,
-        ignore_duplicate_leads_in_other_campaign: false,
-      },
+  return call<UploadLeadBatchResult>(`POST`, `/campaigns/${campaignId}/leads`, {
+    lead_list,
+    settings: {
+      ignore_global_block_list: false,
+      ignore_unsubscribe_list: false,
+      ignore_duplicate_leads_in_other_campaign: false,
     },
-    { params: p() }
-  );
-  return data;
+  });
 }
 
-export async function activateCampaign(
-  campaignId: number,
-  cfg: ApiConfig
-): Promise<void> {
-  const { client, p } = makeClient(cfg);
-  await client.post(
-    `/campaigns/${campaignId}/status`,
-    { status: "START" },
-    { params: p() }
-  );
+export async function activateCampaign(campaignId: number): Promise<void> {
+  await call("POST", `/campaigns/${campaignId}/status`, { status: "START" });
 }
 
 // ── Inbox helper ──────────────────────────────────────────────────────────────
@@ -159,17 +121,6 @@ export function parseInboxIds(rows: InboxRow[]): number[] {
 // ── Error extraction ──────────────────────────────────────────────────────────
 
 export function extractErrorMessage(err: unknown): string {
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data;
-    if (typeof data === "string") return data;
-    if (data && typeof data === "object") {
-      const d = data as Record<string, unknown>;
-      if (d.message) return String(d.message);
-      if (d.error) return String(d.error);
-      return JSON.stringify(data);
-    }
-    return err.message;
-  }
   if (err instanceof Error) return err.message;
   return String(err);
 }

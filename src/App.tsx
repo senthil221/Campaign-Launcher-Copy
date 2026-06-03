@@ -38,7 +38,6 @@ export default function App() {
         inboxes: values.inboxes,
         inboxTag: values.inboxTag,
         campaignSettings: values.campaignSettings,
-        apiConfig: values.apiConfig,
         resumeFromStep,
         existingCampaignId,
       });

@@ -2,7 +2,7 @@ import type { LeadRow, SequenceRow, InboxRow } from "./csv";
 import { chunkArray } from "./csv";
 import type { TemplateKey, ScheduleTemplate } from "./templates";
 import { TEMPLATES } from "./templates";
-import type { CampaignSettings, ApiConfig } from "./config";
+import type { CampaignSettings } from "./config";
 import {
   createCampaign,
   saveSequences,
@@ -59,7 +59,6 @@ export interface PipelineInput {
   inboxes: InboxRow[];
   inboxTag: string;
   campaignSettings: CampaignSettings;
-  apiConfig: ApiConfig;
   // For retry
   resumeFromStep?: StepId;
   existingCampaignId?: number;
@@ -109,8 +108,6 @@ export async function* runPipeline(
 ): AsyncGenerator<PipelineUpdate> {
   const steps = makeInitialSteps();
   let campaignId = input.existingCampaignId ?? 0;
-  const cfg = input.apiConfig;
-
   const emit = (extra?: Partial<PipelineUpdate>): PipelineUpdate => ({
     steps: steps.map((s) => ({ ...s })),
     campaignId: campaignId || undefined,
@@ -143,7 +140,7 @@ export async function* runPipeline(
     s.status = "running";
     yield emit();
     try {
-      const result = await createCampaign(input.campaignName, cfg);
+      const result = await createCampaign(input.campaignName);
       campaignId = result.id;
       s.status = "done";
       s.detail = `ID: ${campaignId}`;
@@ -163,7 +160,7 @@ export async function* runPipeline(
     s.status = "running";
     yield emit({ campaignId });
     try {
-      await saveSequences(campaignId, input.sequences, cfg);
+      await saveSequences(campaignId, input.sequences);
       s.status = "done";
       s.detail = `${input.sequences.length} sequence step(s)`;
       yield emit({ campaignId });
@@ -190,7 +187,7 @@ export async function* runPipeline(
       const batches = chunkArray(inboxIds, 25);
       try {
         for (let i = 0; i < batches.length; i++) {
-          await addInboxBatch(campaignId, batches[i], cfg);
+          await addInboxBatch(campaignId, batches[i]);
           s.detail = `batch ${i + 1} of ${batches.length} ✓`;
           yield emit({ campaignId });
         }
@@ -214,7 +211,7 @@ export async function* runPipeline(
     yield emit({ campaignId });
     try {
       const template = resolveTemplate(input);
-      await setSchedule(campaignId, template, Math.max(3, input.sendGap), cfg);
+      await setSchedule(campaignId, template, Math.max(3, input.sendGap));
       s.status = "done";
       s.detail = `${template.timezone} · ${template.start}–${template.end} · gap ${input.sendGap} min`;
       yield emit({ campaignId });
@@ -233,7 +230,7 @@ export async function* runPipeline(
     s.status = "running";
     yield emit({ campaignId });
     try {
-      await applySettings(campaignId, input.campaignSettings, cfg);
+      await applySettings(campaignId, input.campaignSettings);
       s.status = "done";
       yield emit({ campaignId });
     } catch (err) {
@@ -259,11 +256,11 @@ export async function* runPipeline(
       for (let i = 0; i < batches.length; i++) {
         let result: Awaited<ReturnType<typeof uploadLeadBatch>> | null = null;
         try {
-          result = await uploadLeadBatch(campaignId, batches[i], cfg);
+          result = await uploadLeadBatch(campaignId, batches[i]);
         } catch (err) {
           await sleep(2000);
           try {
-            result = await uploadLeadBatch(campaignId, batches[i], cfg);
+            result = await uploadLeadBatch(campaignId, batches[i]);
           } catch (retryErr) {
             lastError = extractErrorMessage(retryErr);
             console.warn(`Lead batch ${i + 1} failed after retry:`, lastError);
@@ -309,7 +306,7 @@ export async function* runPipeline(
     s.status = "running";
     yield emit({ campaignId });
     try {
-      await activateCampaign(campaignId, cfg);
+      await activateCampaign(campaignId);
       s.status = "done";
       yield emit({ campaignId });
     } catch (err) {

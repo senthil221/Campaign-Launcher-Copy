@@ -12,10 +12,8 @@ import {
   type ScheduleTemplate,
 } from "../lib/templates";
 import {
-  loadApiConfig,
   loadCampaignSettings,
   saveCampaignSettings,
-  type ApiConfig,
   type CampaignSettings,
 } from "../lib/config";
 import { fetchSmartleadTags, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
@@ -43,7 +41,6 @@ export interface FormValues {
   sequences: SequenceRow[];
   inboxes: InboxRow[];
   inboxTag: string;
-  apiConfig: ApiConfig;
   campaignSettings: CampaignSettings;
 }
 
@@ -633,7 +630,6 @@ function SelectedTagPanel({ tagName, accounts, domainCount, avgRep, loading, err
 // ── Main form ─────────────────────────────────────────────────────────────────
 
 export default function LaunchForm({ onSubmit }: Props) {
-  const apiConfig = useMemo(() => loadApiConfig(), []);
   const [campaignName, setCampaignName] = useState("");
   const [mode, setMode] = useState<"draft" | "launch">("draft");
   const [templateKey, setTemplateKey] = useState<TemplateKey>("standard");
@@ -730,7 +726,6 @@ export default function LaunchForm({ onSubmit }: Props) {
       sequences: seqState.data ?? [],
       inboxes: selectedAccounts.map((a) => ({ email_account_id: String(a.id), from_email: a.email })),
       inboxTag: selectedTagName,
-      apiConfig,
       campaignSettings,
     });
   };
