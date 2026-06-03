@@ -7,6 +7,8 @@ export interface SmartleadTagAccount {
   dailySent: number | null;
   reputation: number | null;
   status: string;
+  smtpOk: boolean;
+  imapOk: boolean;
 }
 
 export interface SmartleadTag {
@@ -18,7 +20,7 @@ export interface SmartleadTag {
 }
 
 export function isActiveAccount(a: SmartleadTagAccount): boolean {
-  return !/paused|stopped|disconnect|error|reconnect|failure|smtp/i.test(a.status);
+  return a.smtpOk && a.imapOk;
 }
 
 export interface SmartleadTagsResponse {
@@ -65,9 +67,9 @@ function normalizeAccount(raw: Record<string, unknown>): SmartleadTagAccount {
     dailyLimit: (raw.message_per_day ?? raw.daily_limit ?? raw.max_email_per_day ?? null) as number | null,
     dailySent: (raw.daily_sent_count ?? raw.sent_count ?? null) as number | null,
     reputation,
-    status: [raw.smtp_connection_status, raw.imap_connection_status, raw.connection_status]
-      .filter(Boolean)
-      .join("|"),
+    status: String(raw.warmup_status || raw.status || ""),
+    smtpOk: raw.is_smtp_success !== false,
+    imapOk: raw.is_imap_success !== false,
   };
 }
 
