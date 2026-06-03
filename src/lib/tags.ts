@@ -24,7 +24,13 @@ export interface SmartleadTagsResponse {
 }
 
 const LIMIT = 100;
-const BATCH = 10; // concurrent pages per round
+const BATCH = 5;           // concurrent pages per round
+const BATCH_DELAY_MS = 400; // pause between rounds to stay under rate limit
+const MAX_RETRIES = 3;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function normalizeTagName(mapping: Record<string, unknown>): string {
   return String(
@@ -58,8 +64,17 @@ function normalizeAccount(raw: Record<string, unknown>): SmartleadTagAccount {
   };
 }
 
-async function fetchPage(offset: number): Promise<Record<string, unknown>[]> {
+async function fetchPage(offset: number, attempt = 0): Promise<Record<string, unknown>[]> {
   const res = await fetch(`/api/smartlead-tags?offset=${offset}`, { cache: "no-store" });
+
+  if (res.status === 429) {
+    if (attempt >= MAX_RETRIES) throw new Error("Rate limited by Smartlead — too many requests.");
+    // honour Retry-After if present, otherwise back off exponentially (10s, 20s, 40s)
+    const retryAfter = res.headers.get("Retry-After");
+    const waitMs = retryAfter ? Number(retryAfter) * 1000 : 10_000 * Math.pow(2, attempt);
+    await sleep(waitMs);
+    return fetchPage(offset, attempt + 1);
+  }
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -85,7 +100,7 @@ export async function fetchSmartleadTags(
     const offsets: number[] = [];
     for (let i = 0; i < BATCH; i++, offset += LIMIT) offsets.push(offset);
 
-    const pages = await Promise.all(offsets.map(fetchPage));
+    const pages = await Promise.all(offsets.map((o) => fetchPage(o)));
 
     for (const page of pages) {
       all.push(...page);
@@ -93,6 +108,7 @@ export async function fetchSmartleadTags(
     }
 
     onProgress?.(all.length);
+    if (!done) await sleep(BATCH_DELAY_MS);
   }
 
   // Build tag map
