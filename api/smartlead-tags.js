@@ -56,52 +56,53 @@ export default async function handler(req, res) {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  async function fetchPage(offset) {
+    const url = new URL(endpoint);
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(limit));
+
+    let upstream;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      upstream = await fetch(url, {
+        headers: { Authorization: authHeader, Accept: "application/json" },
+      });
+      if (upstream.status !== 429) break;
+      const retryAfter = Number(upstream.headers.get("Retry-After") || 65);
+      await sleep(Math.min(retryAfter, 65) * 1000);
+    }
+
+    if (!upstream.ok) {
+      const text = await upstream.text();
+      const err = new Error("Smartlead JWT account fetch failed.");
+      err.status = upstream.status;
+      err.detail = text.slice(0, 500);
+      throw err;
+    }
+
+    const payload = await upstream.json();
+    const accounts = payload?.data?.email_accounts || payload?.email_accounts || payload?.data || [];
+    return Array.isArray(accounts) ? accounts : [accounts].filter(Boolean);
+  }
+
   try {
     const all = [];
+    const BATCH = 10; // concurrent pages per round
     let offset = 0;
-    let page = 0;
+    let done = false;
 
-    while (page < maxPages) {
-      const url = new URL(endpoint);
-      url.searchParams.set("offset", String(offset));
-      url.searchParams.set("limit", String(limit));
-
-      let upstream;
-      // Retry once on 429 after the indicated wait (or 65s default)
-      for (let attempt = 0; attempt < 2; attempt++) {
-        upstream = await fetch(url, {
-          headers: {
-            Authorization: authHeader,
-            Accept: "application/json",
-          },
-        });
-        if (upstream.status !== 429) break;
-        const retryAfter = Number(upstream.headers.get("Retry-After") || 65);
-        await sleep(Math.min(retryAfter, 65) * 1000);
+    while (!done && offset < maxPages * limit) {
+      // Build a batch of up to BATCH offsets
+      const offsets = [];
+      for (let i = 0; i < BATCH && offset < maxPages * limit; i++, offset += limit) {
+        offsets.push(offset);
       }
 
-      if (!upstream.ok) {
-        const text = await upstream.text();
-        return json(res, upstream.status, {
-          error: "Smartlead JWT account fetch failed.",
-          detail: text.slice(0, 500),
-        });
+      const pages = await Promise.all(offsets.map(fetchPage));
+
+      for (const pageAccounts of pages) {
+        all.push(...pageAccounts);
+        if (pageAccounts.length < limit) { done = true; break; }
       }
-
-      const payload = await upstream.json();
-      const accounts = payload?.data?.email_accounts || payload?.email_accounts || payload?.data || [];
-      const pageAccounts = Array.isArray(accounts) ? accounts : [accounts].filter(Boolean);
-
-      if (pageAccounts.length === 0) break;
-
-      all.push(...pageAccounts);
-      page += 1;
-      offset += limit;
-
-      if (pageAccounts.length < limit) break;
-
-      // Small pause to avoid hammering the API on multi-page fetches
-      if (page < maxPages) await sleep(100);
     }
 
     const tagMap = new Map();
@@ -142,7 +143,7 @@ export default async function handler(req, res) {
       }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=7200");
     return json(res, 200, {
       fetchedAt: new Date().toISOString(),
       totalAccounts: all.length,
@@ -150,8 +151,10 @@ export default async function handler(req, res) {
       tags,
     });
   } catch (error) {
-    return json(res, 500, {
+    const status = error.status || 500;
+    return json(res, status, {
       error: error instanceof Error ? error.message : "Unknown server error while fetching Smartlead tags.",
+      ...(error.detail ? { detail: error.detail } : {}),
     });
   }
 }
