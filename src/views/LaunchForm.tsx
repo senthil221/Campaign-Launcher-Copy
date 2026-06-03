@@ -51,7 +51,38 @@ interface Props {
   onSubmit: (values: FormValues) => void;
 }
 
-// ── Small UI helpers ──────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function substituteVars(text: string, lead: LeadRow | null): string {
+  const sample: Record<string, string> = {
+    first_name: "Alex",
+    last_name: "Johnson",
+    company_name: "Acme Corp",
+    email: "alex@acme.com",
+  };
+  const ctx = lead ?? (sample as LeadRow);
+  return text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => ctx[key] || `{{${key}}}`);
+}
+
+function tagHealthStats(tag: SmartleadTag) {
+  const lowRep = tag.accounts.filter(
+    (a) => a.reputation !== null && (a.reputation as number) < 70
+  ).length;
+  const inactive = tag.accounts.filter((a) =>
+    /paused|stopped/i.test(a.status)
+  ).length;
+  return { lowRep, inactive, total: lowRep + inactive };
+}
+
+// ── Small primitives ──────────────────────────────────────────────────────────
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 mb-1.5">
+      {children}
+    </p>
+  );
+}
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -60,195 +91,131 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-        checked ? "bg-blue-500" : "bg-gray-700"
-      }`}
+      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors focus:outline-none ${checked ? "bg-blue-500" : "bg-zinc-700"}`}
     >
-      <span
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
-          checked ? "translate-x-4" : "translate-x-0"
-        }`}
-      />
+      <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-3" : "translate-x-0"}`} />
     </button>
   );
 }
 
-function SettingRow({
-  label,
-  description,
-  checked,
-  onChange,
-}: {
-  label: string;
-  description?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
+function SettingRow({ label, description, checked, onChange }: { label: string; description?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
+    <div className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0">
-        <p className="text-sm text-gray-200">{label}</p>
-        {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+        <p className="text-[13px] text-zinc-300">{label}</p>
+        {description && <p className="text-[11px] text-zinc-600 mt-px">{description}</p>}
       </div>
       <Toggle checked={checked} onChange={onChange} />
     </div>
   );
 }
 
-function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+function CheckItem({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/70 px-4 py-3">
-      <p className="text-[11px] uppercase tracking-[0.16em] text-gray-500 font-semibold">{label}</p>
-      <p className="mt-1 text-xl font-bold text-white">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-gray-500 truncate">{hint}</p>}
+    <div className="flex items-center gap-2">
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ok ? "bg-emerald-400" : "bg-zinc-700"}`} />
+      <span className={`text-[11px] ${ok ? "text-zinc-300" : "text-zinc-600"}`}>{label}</span>
     </div>
   );
 }
 
-function StatusPill({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${ok ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-gray-800 bg-gray-900 text-gray-500"}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-green-400" : "bg-gray-600"}`} />
-      {label}
-    </div>
-  );
-}
+// ── Drop zones ────────────────────────────────────────────────────────────────
 
-// ── File upload components ───────────────────────────────────────────────────
-
-interface DropZoneProps {
-  label: string;
-  hint: string;
-  fileState: FileState<unknown>;
-  onFile: (file: File) => void;
-}
-
-function DropZone({ label, hint, fileState, onFile }: DropZoneProps) {
+function DropZone({ label, hint, fileState, onFile }: { label: string; hint: string; fileState: FileState<unknown>; onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) onFile(file);
-    },
-    [onFile]
-  );
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) onFile(file);
+  }, [onFile]);
 
-  const border = fileState.errors.length
-    ? "border-red-500 bg-red-500/5"
+  const ring = fileState.errors.length
+    ? "border-red-500/60 bg-red-500/5"
     : fileState.data
-      ? "border-green-500 bg-green-500/5"
+      ? "border-emerald-500/40 bg-emerald-500/5"
       : dragging
-        ? "border-blue-400 bg-blue-500/5"
-        : "border-gray-800 bg-gray-900/70 hover:border-gray-600";
+        ? "border-blue-500/60 bg-blue-500/5"
+        : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/50";
 
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium text-gray-300">{label}</label>
+    <div>
+      <Label>{label}</Label>
       <div
-        className={`relative rounded-xl border-2 border-dashed px-4 py-4 transition-all cursor-pointer ${border}`}
+        className={`rounded-md border border-dashed px-3 py-2.5 cursor-pointer transition-all ${ring}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv"
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onFile(file);
-            e.target.value = "";
-          }}
-        />
+        <input ref={inputRef} type="file" accept=".csv" className="sr-only"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
         {fileState.loading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <span className="h-3.5 w-3.5 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
-            Parsing CSV…
+          <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+            <span className="h-3 w-3 rounded-full border border-zinc-700 border-t-blue-400 animate-spin" />
+            Parsing…
           </div>
         ) : fileState.data ? (
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{fileState.file?.name}</p>
-              <p className="text-xs text-green-400">{fileState.data.length.toLocaleString()} rows ready</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span className="text-[12px] text-zinc-300 truncate">{fileState.file?.name}</span>
+              <span className="text-[11px] text-zinc-600 shrink-0 font-mono">{fileState.data.length.toLocaleString()} rows</span>
             </div>
-            <span className="rounded-md bg-green-500/10 border border-green-500/30 px-2 py-1 text-xs font-semibold text-green-300">Ready</span>
+            <span className="text-[10px] text-zinc-600 shrink-0 ml-2">click to replace</span>
           </div>
         ) : (
-          <div>
-            <p className="text-sm text-gray-300"><span className="text-blue-400 font-semibold">Click to upload</span> or drag and drop</p>
-            <p className="text-xs text-gray-600 mt-0.5">{hint}</p>
-          </div>
+          <p className="text-[12px] text-zinc-500">
+            <span className="text-blue-400 font-medium">Upload</span> or drop · {hint}
+          </p>
         )}
       </div>
-      {fileState.errors.map((error) => (
-        <p key={error} className="text-xs text-red-400">{error}</p>
-      ))}
-      {fileState.warnings.map((warning) => (
-        <p key={warning} className="text-xs text-amber-400">{warning}</p>
-      ))}
+      {fileState.errors.map((e) => <p key={e} className="text-[11px] text-red-400 mt-1">{e}</p>)}
+      {fileState.warnings.map((w) => <p key={w} className="text-[11px] text-amber-400 mt-1">{w}</p>)}
     </div>
   );
 }
 
-interface MultiLeadsDropZoneProps {
-  files: FileState<LeadRow>[];
-  onAddFile: (file: File) => void;
-  onRemoveFile: (index: number) => void;
-}
-
-function MultiLeadsDropZone({ files, onAddFile, onRemoveFile }: MultiLeadsDropZoneProps) {
+function MultiLeadsDropZone({ files, onAddFile, onRemoveFile }: { files: FileState<LeadRow>[]; onAddFile: (f: File) => void; onRemoveFile: (i: number) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const totalRows = files.reduce((s, f) => s + (f.data?.length ?? 0), 0);
+  const hasErrors = files.some((f) => f.errors.length > 0);
 
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) onAddFile(file);
-    },
-    [onAddFile]
-  );
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) onAddFile(f);
+  }, [onAddFile]);
 
-  const totalRows = files.reduce((sum, file) => sum + (file.data?.length ?? 0), 0);
-  const hasErrors = files.some((file) => file.errors.length > 0);
-  const border = hasErrors
-    ? "border-red-500 bg-red-500/5"
-    : files.length > 0
-      ? "border-green-500 bg-green-500/5"
-      : dragging
-        ? "border-blue-400 bg-blue-500/5"
-        : "border-gray-800 bg-gray-900/70 hover:border-gray-600";
+  const ring = hasErrors ? "border-red-500/60" : files.length > 0 ? "border-emerald-500/40" : dragging ? "border-blue-500/60" : "border-zinc-800 hover:border-zinc-700";
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium text-gray-300">Lead lists</label>
-        {totalRows > 0 && <span className="text-xs text-gray-500">{totalRows.toLocaleString()} total leads</span>}
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <Label>Leads</Label>
+        {totalRows > 0 && <span className="text-[11px] text-zinc-500 font-mono">{totalRows.toLocaleString()} total</span>}
       </div>
 
       {files.length > 0 && (
-        <div className="space-y-2">
-          {files.map((file, index) => (
-            <div key={`${file.file?.name ?? "lead"}-${index}`} className={`rounded-lg border px-3 py-2 flex items-center justify-between gap-2 ${file.errors.length ? "border-red-500/50 bg-red-500/5" : "border-gray-800 bg-gray-900/80"}`}>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-200 truncate">{file.file?.name}</p>
-                <p className="text-xs text-gray-500">
-                  {file.loading ? "Parsing…" : file.data ? `${file.data.length.toLocaleString()} rows` : "Needs attention"}
-                </p>
+        <div className="space-y-1 mb-1.5">
+          {files.map((f, i) => (
+            <div key={i} className={`flex items-center justify-between px-3 h-8 rounded-md border ${f.errors.length ? "border-red-500/40 bg-red-500/5" : "border-zinc-800 bg-zinc-900/60"}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                {f.loading
+                  ? <span className="h-3 w-3 rounded-full border border-zinc-700 border-t-blue-400 animate-spin shrink-0" />
+                  : <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${f.errors.length ? "bg-red-400" : "bg-emerald-400"}`} />}
+                <span className="text-[12px] text-zinc-300 truncate">{f.file?.name}</span>
+                {!f.loading && f.data && <span className="text-[11px] text-zinc-600 font-mono shrink-0">{f.data.length.toLocaleString()}</span>}
               </div>
-              <button
-                type="button"
-                onClick={() => onRemoveFile(index)}
-                className="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-gray-200"
-              >
-                Remove
+              <button type="button" onClick={() => onRemoveFile(i)}
+                className="text-zinc-600 hover:text-zinc-300 transition-colors ml-2 shrink-0">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           ))}
@@ -256,55 +223,98 @@ function MultiLeadsDropZone({ files, onAddFile, onRemoveFile }: MultiLeadsDropZo
       )}
 
       <div
-        className={`relative rounded-xl border-2 border-dashed px-4 py-4 transition-all cursor-pointer ${border}`}
+        className={`rounded-md border border-dashed px-3 py-2.5 cursor-pointer transition-all bg-zinc-900/50 ${ring}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv"
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onAddFile(file);
-            e.target.value = "";
-          }}
-        />
-        <p className="text-sm text-gray-300">
-          <span className="text-blue-400 font-semibold">{files.length ? "Add another CSV" : "Upload leads CSV"}</span>
+        <input ref={inputRef} type="file" accept=".csv" className="sr-only"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onAddFile(f); e.target.value = ""; }} />
+        <p className="text-[12px] text-zinc-500">
+          <span className="text-blue-400 font-medium">{files.length ? "+ Add another CSV" : "Upload leads CSV"}</span>
+          {!files.length && " · Required: email. Optional: first_name, last_name, company_name"}
         </p>
-        <p className="text-xs text-gray-600 mt-0.5">Required: email. Optional: first_name, last_name, company_name.</p>
       </div>
 
-      {files.flatMap((file, index) => [
-        ...file.errors.map((error) => (
-          <p key={`e-${index}-${error}`} className="text-xs text-red-400">{file.file?.name}: {error}</p>
-        )),
-        ...file.warnings.map((warning) => (
-          <p key={`w-${index}-${warning}`} className="text-xs text-amber-400">{file.file?.name}: {warning}</p>
-        )),
+      {files.flatMap((f, i) => [
+        ...f.errors.map((e) => <p key={`e${i}${e}`} className="text-[11px] text-red-400 mt-1">{files.length > 1 ? `${f.file?.name}: ` : ""}{e}</p>),
+        ...f.warnings.map((w) => <p key={`w${i}${w}`} className="text-[11px] text-amber-400 mt-1">{files.length > 1 ? `${f.file?.name}: ` : ""}{w}</p>),
       ])}
     </div>
   );
 }
 
-// ── Settings Drawer ───────────────────────────────────────────────────────────
+// ── Sequence preview ──────────────────────────────────────────────────────────
 
-interface SettingsDrawerProps {
-  open: boolean;
-  onClose: () => void;
-  campaignSettings: CampaignSettings;
-  onCampaignSettingsChange: (s: CampaignSettings) => void;
+function SequencePreview({ sequences, sampleLead }: { sequences: SequenceRow[]; sampleLead: LeadRow | null }) {
+  const [active, setActive] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  if (sequences.length === 0) return null;
+
+  const step = sequences[Math.min(active, sequences.length - 1)];
+  const subject = substituteVars(step.subject || "", sampleLead);
+  const body = substituteVars(step.body || "", sampleLead);
+  const delay = Number(step.delay_days ?? 0);
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        Preview sequence · {sequences.length} step{sequences.length !== 1 ? "s" : ""}
+        {sampleLead && <span className="text-zinc-700 ml-1">using {sampleLead.first_name || sampleLead.email}</span>}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 rounded-md border border-zinc-800 bg-zinc-950 overflow-hidden">
+          {/* Step tabs */}
+          <div className="flex border-b border-zinc-800 overflow-x-auto scrollbar-thin">
+            {sequences.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActive(i)}
+                className={`shrink-0 px-3 h-7 text-[11px] font-medium transition-colors border-r border-zinc-800 ${active === i ? "bg-zinc-900 text-zinc-100" : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-900/50"}`}
+              >
+                Step {s.seq_number}
+              </button>
+            ))}
+          </div>
+
+          {/* Step content */}
+          <div className="p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide w-12 shrink-0">Delay</span>
+              <span className="font-mono text-[11px] text-zinc-400">Day {delay}</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide w-12 shrink-0 pt-px">Subject</span>
+              <span className="text-[12px] text-zinc-200 leading-relaxed">{subject || <span className="text-zinc-700 italic">empty</span>}</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide w-12 shrink-0 pt-px">Body</span>
+              <pre className="text-[11px] text-zinc-400 leading-relaxed whitespace-pre-wrap font-sans max-h-40 overflow-y-auto scrollbar-thin">
+                {body || <span className="text-zinc-700 italic">empty</span>}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function SettingsDrawer({ open, onClose, campaignSettings, onCampaignSettingsChange }: SettingsDrawerProps) {
-  const [saved, setSaved] = useState(false);
+// ── Settings drawer ───────────────────────────────────────────────────────────
 
-  const set = <K extends keyof CampaignSettings>(key: K, value: CampaignSettings[K]) =>
-    onCampaignSettingsChange({ ...campaignSettings, [key]: value });
+function SettingsDrawer({ open, onClose, campaignSettings, onCampaignSettingsChange }: { open: boolean; onClose: () => void; campaignSettings: CampaignSettings; onCampaignSettingsChange: (s: CampaignSettings) => void }) {
+  const [saved, setSaved] = useState(false);
+  const set = <K extends keyof CampaignSettings>(k: K, v: CampaignSettings[K]) => onCampaignSettingsChange({ ...campaignSettings, [k]: v });
 
   const handleSave = () => {
     saveCampaignSettings(campaignSettings);
@@ -314,109 +324,107 @@ function SettingsDrawer({ open, onClose, campaignSettings, onCampaignSettingsCha
 
   if (!open) return null;
 
+  const oooMode = campaignSettings.autoReactivateOOO && campaignSettings.reactivateOOOwithDelay === 0
+    ? "immediate"
+    : campaignSettings.reactivateOOOwithDelay > 0 ? "delay"
+    : campaignSettings.autoCategorizeOOO ? "categorize" : "off";
+
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
-      <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[430px] flex-col overflow-hidden border-l border-gray-800 bg-gray-950 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-800 px-5 py-4">
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[380px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
           <div>
-            <p className="text-sm font-semibold text-white">Campaign defaults</p>
-            <p className="text-xs text-gray-500">Saved in this browser. API secrets stay in Vercel.</p>
+            <p className="text-[13px] font-semibold text-zinc-100">Campaign defaults</p>
+            <p className="text-[11px] text-zinc-600 mt-px">Saved in browser · API secrets stay in Vercel</p>
           </div>
-          <button onClick={onClose} className="rounded-md px-2 py-1 text-gray-500 hover:bg-gray-800 hover:text-gray-200">Close</button>
+          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider pt-2 pb-1">Sending</p>
-            <div className="py-3">
-              <label className="text-sm text-gray-200 block mb-0.5">Gap between emails <span className="text-gray-500 font-normal">(minutes)</span></label>
-              <p className="text-xs text-gray-500 mb-2">Time between individual emails, not the campaign window.</p>
-              <input
-                type="number"
-                min={3}
-                max={120}
-                value={campaignSettings.sendGapMinutes}
-                onChange={(e) => set("sendGapMinutes", Math.max(3, Number(e.target.value)))}
-                className="w-24 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              />
-              <span className="text-xs text-gray-600 ml-2">min</span>
+        <div className="flex-1 overflow-y-auto px-4 py-3 scrollbar-thin space-y-4">
+          {/* Sending */}
+          <div>
+            <Label>Sending</Label>
+            <div className="space-y-1">
+              <p className="text-[12px] text-zinc-400">Gap between emails</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min={3} max={120} value={campaignSettings.sendGapMinutes}
+                  onChange={(e) => set("sendGapMinutes", Math.max(3, Number(e.target.value)))}
+                  className="w-16 h-7 rounded border border-zinc-800 bg-zinc-900 px-2 text-[12px] text-zinc-100 font-mono focus:border-blue-500 focus:outline-none" />
+                <span className="text-[11px] text-zinc-600">min · min 3</span>
+              </div>
             </div>
+          </div>
 
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider pt-2 pb-1">Tracking</p>
-            <div className="divide-y divide-gray-800/60">
-              <SettingRow label="Track email opens" description="Usually off for safer cold outreach" checked={campaignSettings.trackEmailOpen} onChange={(v) => set("trackEmailOpen", v)} />
-              <SettingRow label="Track link clicks" description="Usually off unless the sequence needs links" checked={campaignSettings.trackLinkClick} onChange={(v) => set("trackLinkClick", v)} />
+          {/* Tracking */}
+          <div>
+            <Label>Tracking</Label>
+            <div className="divide-y divide-zinc-800/60">
+              <SettingRow label="Track opens" description="Usually off for cold outreach" checked={campaignSettings.trackEmailOpen} onChange={(v) => set("trackEmailOpen", v)} />
+              <SettingRow label="Track link clicks" description="Only if sequence has links" checked={campaignSettings.trackLinkClick} onChange={(v) => set("trackLinkClick", v)} />
             </div>
+          </div>
 
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider pt-4 pb-1">Format</p>
-            <div className="divide-y divide-gray-800/60">
-              <SettingRow label="Send as plain text" description="Keeps emails lightweight and less salesy" checked={campaignSettings.sendAsPlainText} onChange={(v) => set("sendAsPlainText", v)} />
-              <SettingRow label="Force plain text" description="Overrides HTML from uploaded templates" checked={campaignSettings.forcePlainText} onChange={(v) => set("forcePlainText", v)} />
+          {/* Format */}
+          <div>
+            <Label>Format</Label>
+            <div className="divide-y divide-zinc-800/60">
+              <SettingRow label="Send as plain text" description="Lightweight, less salesy" checked={campaignSettings.sendAsPlainText} onChange={(v) => set("sendAsPlainText", v)} />
+              <SettingRow label="Force plain text" description="Overrides HTML from templates" checked={campaignSettings.forcePlainText} onChange={(v) => set("forcePlainText", v)} />
             </div>
+          </div>
 
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider pt-4 pb-1">Lead behaviour</p>
-            <div className="divide-y divide-gray-800/60">
-              <div className="py-3">
-                <label className="text-sm text-gray-200 block mb-1.5">Stop lead on</label>
-                <select
-                  value={campaignSettings.stopLeadSettings}
+          {/* Lead behaviour */}
+          <div>
+            <Label>Lead behaviour</Label>
+            <div className="divide-y divide-zinc-800/60">
+              <div className="py-2.5">
+                <p className="text-[12px] text-zinc-400 mb-1.5">Stop lead on</p>
+                <select value={campaignSettings.stopLeadSettings}
                   onChange={(e) => set("stopLeadSettings", e.target.value as CampaignSettings["stopLeadSettings"])}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none"
-                >
+                  className="w-full h-7 rounded border border-zinc-800 bg-zinc-900 px-2 text-[12px] text-zinc-200 focus:border-blue-500 focus:outline-none">
                   <option value="REPLY_TO_AN_EMAIL">Reply to an email</option>
                   <option value="CLICK_ON_UNSUBSCRIBE">Click unsubscribe</option>
                   <option value="OPEN_AN_EMAIL">Open an email</option>
                 </select>
               </div>
-              <SettingRow label="Pause same-domain leads on reply" description="Avoids emailing multiple people at a company after one replies" checked={campaignSettings.autoPauseDomainLeadsOnReply} onChange={(v) => set("autoPauseDomainLeadsOnReply", v)} />
+              <SettingRow label="Pause domain on reply" description="Pauses other leads at same company" checked={campaignSettings.autoPauseDomainLeadsOnReply} onChange={(v) => set("autoPauseDomainLeadsOnReply", v)} />
             </div>
+          </div>
 
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider pt-4 pb-1">Out of office</p>
-            <div className="divide-y divide-gray-800/60">
-              <SettingRow label="Ignore OOO as reply" description="OOO responses will not stop the sequence" checked={campaignSettings.ignoreOOOasReply} onChange={(v) => set("ignoreOOOasReply", v)} />
-              <div className="py-3 space-y-2">
-                <p className="text-sm text-gray-200">Reactivation mode</p>
+          {/* OOO */}
+          <div>
+            <Label>Out of office</Label>
+            <div className="divide-y divide-zinc-800/60">
+              <SettingRow label="Ignore OOO as reply" description="OOO won't stop the sequence" checked={campaignSettings.ignoreOOOasReply} onChange={(v) => set("ignoreOOOasReply", v)} />
+              <div className="py-2.5 space-y-1.5">
+                <p className="text-[12px] text-zinc-400">Reactivation mode</p>
                 {([
                   { label: "Auto-reactivate immediately", value: "immediate" },
                   { label: "Reactivate after delay", value: "delay" },
                   { label: "Auto-categorize only", value: "categorize" },
                   { label: "Off", value: "off" },
-                ] as const).map(({ label, value }) => {
-                  const current = campaignSettings.autoReactivateOOO && campaignSettings.reactivateOOOwithDelay === 0
-                    ? "immediate"
-                    : campaignSettings.reactivateOOOwithDelay > 0
-                      ? "delay"
-                      : campaignSettings.autoCategorizeOOO
-                        ? "categorize"
-                        : "off";
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        if (value === "immediate") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: true, reactivateOOOwithDelay: 0, autoCategorizeOOO: false });
-                        else if (value === "delay") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: campaignSettings.reactivateOOOwithDelay || 3, autoCategorizeOOO: false });
-                        else if (value === "categorize") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: 0, autoCategorizeOOO: true });
-                        else onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: 0, autoCategorizeOOO: false });
-                      }}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${current === value ? "border-blue-500 bg-blue-500/10 text-blue-300" : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"}`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+                ] as const).map(({ label, value }) => (
+                  <button key={value} type="button"
+                    onClick={() => {
+                      if (value === "immediate") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: true, reactivateOOOwithDelay: 0, autoCategorizeOOO: false });
+                      else if (value === "delay") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: campaignSettings.reactivateOOOwithDelay || 3, autoCategorizeOOO: false });
+                      else if (value === "categorize") onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: 0, autoCategorizeOOO: true });
+                      else onCampaignSettingsChange({ ...campaignSettings, autoReactivateOOO: false, reactivateOOOwithDelay: 0, autoCategorizeOOO: false });
+                    }}
+                    className={`w-full text-left px-2.5 h-7 rounded text-[12px] border transition-colors ${oooMode === value ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"}`}>
+                    {label}
+                  </button>
+                ))}
                 {campaignSettings.reactivateOOOwithDelay > 0 && (
                   <div className="flex items-center gap-2 pt-1">
-                    <label className="text-xs text-gray-400">Delay days</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={campaignSettings.reactivateOOOwithDelay}
+                    <span className="text-[11px] text-zinc-600">Delay</span>
+                    <input type="number" min={1} max={30} value={campaignSettings.reactivateOOOwithDelay}
                       onChange={(e) => set("reactivateOOOwithDelay", Math.max(1, Number(e.target.value)))}
-                      className="w-20 rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"
-                    />
+                      className="w-14 h-7 rounded border border-zinc-800 bg-zinc-900 px-2 text-[12px] text-zinc-100 font-mono focus:border-blue-500 focus:outline-none" />
+                    <span className="text-[11px] text-zinc-600">days</span>
                   </div>
                 )}
               </div>
@@ -424,11 +432,9 @@ function SettingsDrawer({ open, onClose, campaignSettings, onCampaignSettingsCha
           </div>
         </div>
 
-        <div className="border-t border-gray-800 px-5 py-4">
-          <button
-            onClick={handleSave}
-            className={`w-full rounded-lg py-2.5 text-sm font-semibold transition ${saved ? "border border-green-500/50 bg-green-500/20 text-green-300" : "bg-blue-500 text-white hover:bg-blue-400"}`}
-          >
+        <div className="border-t border-zinc-800 px-4 py-3">
+          <button onClick={handleSave}
+            className={`w-full h-8 rounded text-[13px] font-medium transition-colors ${saved ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-400" : "bg-blue-500 text-white hover:bg-blue-400"}`}>
             {saved ? "Saved" : "Save defaults"}
           </button>
         </div>
@@ -437,11 +443,10 @@ function SettingsDrawer({ open, onClose, campaignSettings, onCampaignSettingsCha
   );
 }
 
-// ── Custom Schedule Editor ────────────────────────────────────────────────────
+// ── Custom schedule editor ────────────────────────────────────────────────────
 
 function CustomScheduleEditor({ schedule, onChange }: { schedule: ScheduleTemplate; onChange: (s: ScheduleTemplate) => void }) {
-  const set = <K extends keyof ScheduleTemplate>(key: K, value: ScheduleTemplate[K]) => onChange({ ...schedule, [key]: value });
-
+  const set = <K extends keyof ScheduleTemplate>(k: K, v: ScheduleTemplate[K]) => onChange({ ...schedule, [k]: v });
   const toggleDay = (day: number) => {
     const days = schedule.days.includes(day)
       ? schedule.days.filter((d) => d !== day)
@@ -450,126 +455,176 @@ function CustomScheduleEditor({ schedule, onChange }: { schedule: ScheduleTempla
   };
 
   return (
-    <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/70 p-4 space-y-4">
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-gray-400">Timezone</label>
-        <select value={schedule.timezone} onChange={(e) => set("timezone", e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none">
+    <div className="mt-2 rounded-md border border-zinc-800 bg-zinc-900/60 p-3 space-y-3">
+      <div>
+        <Label>Timezone</Label>
+        <select value={schedule.timezone} onChange={(e) => set("timezone", e.target.value)}
+          className="w-full h-7 rounded border border-zinc-800 bg-zinc-950 px-2 text-[12px] text-zinc-200 focus:border-blue-500 focus:outline-none">
           {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
         </select>
       </div>
 
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-gray-400">Send days</label>
-        <div className="flex gap-1.5">
-          {DAY_LABELS.map((label, index) => (
-            <button key={label} type="button" onClick={() => toggleDay(index)} className={`flex-1 rounded py-1.5 text-xs font-medium transition ${schedule.days.includes(index) ? "border border-blue-500 bg-blue-500/20 text-blue-300" : "border border-gray-700 bg-gray-800 text-gray-500 hover:border-gray-600"}`}>
+      <div>
+        <Label>Send days</Label>
+        <div className="flex gap-1">
+          {DAY_LABELS.map((label, idx) => (
+            <button key={idx} type="button" onClick={() => toggleDay(idx)}
+              className={`flex-1 h-7 rounded text-[11px] font-medium transition-colors ${schedule.days.includes(idx) ? "bg-blue-500/20 border border-blue-500/50 text-blue-300" : "border border-zinc-800 bg-zinc-950 text-zinc-600 hover:border-zinc-700"}`}>
               {label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-400">Start</label>
-          <input type="time" value={schedule.start} onChange={(e) => set("start", e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none" />
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <Label>Start</Label>
+          <input type="time" value={schedule.start} onChange={(e) => set("start", e.target.value)}
+            className="w-full h-7 rounded border border-zinc-800 bg-zinc-950 px-2 text-[12px] text-zinc-200 focus:border-blue-500 focus:outline-none" />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-400">End</label>
-          <input type="time" value={schedule.end} onChange={(e) => set("end", e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none" />
+        <div>
+          <Label>End</Label>
+          <input type="time" value={schedule.end} onChange={(e) => set("end", e.target.value)}
+            className="w-full h-7 rounded border border-zinc-800 bg-zinc-950 px-2 text-[12px] text-zinc-200 focus:border-blue-500 focus:outline-none" />
         </div>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-gray-400">Max new leads per day</label>
-        <input type="number" min={1} max={500} value={schedule.maxLeads} onChange={(e) => set("maxLeads", Math.max(1, Number(e.target.value)))} className="w-28 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-500 focus:outline-none" />
+        <div>
+          <Label>Max/day</Label>
+          <input type="number" min={1} max={500} value={schedule.maxLeads}
+            onChange={(e) => set("maxLeads", Math.max(1, Number(e.target.value)))}
+            className="w-full h-7 rounded border border-zinc-800 bg-zinc-950 px-2 text-[12px] text-zinc-200 font-mono focus:border-blue-500 focus:outline-none" />
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Smartlead Tag Picker ──────────────────────────────────────────────────────
+// ── Tag picker ────────────────────────────────────────────────────────────────
 
-function TagPicker({
-  tags,
-  selectedTag,
-  query,
-  loading,
-  error,
-  onQuery,
-  onSelect,
-  onRefresh,
-}: {
+function TagPicker({ tags, selectedTag, query, loading, error, onQuery, onSelect, onRefresh }: {
   tags: SmartleadTag[];
   selectedTag: string;
   query: string;
   loading: boolean;
   error: string;
-  onQuery: (value: string) => void;
-  onSelect: (value: string) => void;
+  onQuery: (v: string) => void;
+  onSelect: (v: string) => void;
   onRefresh: () => void;
 }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? tags.filter((tag) => tag.name.toLowerCase().includes(q)) : tags;
+    return q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
   }, [query, tags]);
 
   return (
-    <div className="rounded-2xl border border-gray-800 bg-gray-900/70 overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-gray-800 px-5 py-4">
+    <div className="rounded-md border border-zinc-800 bg-zinc-900/60 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-zinc-800">
         <div>
-          <p className="text-sm font-semibold text-white">Smartlead tags</p>
-          <p className="text-xs text-gray-500">Pulled from JWT server-side. No inbox CSV needed.</p>
+          <p className="text-[12px] font-semibold text-zinc-200">Inbox tag</p>
+          <p className="text-[10px] text-zinc-600 mt-px">Pulled from Smartlead via JWT · server-side</p>
         </div>
-        <button onClick={onRefresh} disabled={loading} className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-500 disabled:opacity-50">
+        <button onClick={onRefresh} disabled={loading}
+          className="h-6 px-2.5 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-40 transition-colors shrink-0">
           {loading ? "Syncing…" : "Refresh"}
         </button>
       </div>
 
-      <div className="p-4 space-y-3">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search tags…"
-          className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-        />
+      <div className="p-2.5 space-y-2">
+        <input type="text" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search tags…"
+          className="w-full h-7 rounded border border-zinc-800 bg-zinc-950 px-2.5 text-[12px] text-zinc-200 placeholder-zinc-700 focus:border-blue-500 focus:outline-none" />
 
-        {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+        {error && (
+          <div className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-400">{error}</div>
+        )}
 
-        <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+        <div className="max-h-[300px] space-y-1 overflow-y-auto pr-0.5 scrollbar-thin">
           {loading && tags.length === 0 ? (
-            <div className="rounded-xl border border-gray-800 bg-gray-950 px-4 py-6 text-center text-sm text-gray-500">Loading tags from Smartlead…</div>
+            <div className="py-6 text-center text-[12px] text-zinc-600">Loading tags…</div>
           ) : filtered.length === 0 ? (
-            <div className="rounded-xl border border-gray-800 bg-gray-950 px-4 py-6 text-center text-sm text-gray-500">No matching tags found.</div>
-          ) : (
-            filtered.map((tag) => {
-              const active = selectedTag === tag.name;
-              return (
-                <button
-                  key={tag.name}
-                  type="button"
-                  onClick={() => onSelect(tag.name)}
-                  className={`w-full rounded-xl border px-4 py-3 text-left transition ${active ? "border-blue-500 bg-blue-500/10" : "border-gray-800 bg-gray-950 hover:border-gray-700"}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className={`truncate text-sm font-semibold ${active ? "text-blue-200" : "text-gray-200"}`}>{tag.name}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">{tag.domains.toLocaleString()} domains</p>
-                    </div>
-                    <span className={`rounded-md px-2 py-1 text-xs font-bold ${active ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-300"}`}>{tag.count.toLocaleString()}</span>
+            <div className="py-6 text-center text-[12px] text-zinc-600">No tags found</div>
+          ) : filtered.map((tag) => {
+            const active = selectedTag === tag.name;
+            const health = tagHealthStats(tag);
+            return (
+              <button key={tag.name} type="button" onClick={() => onSelect(tag.name)}
+                className={`w-full rounded px-2.5 py-2 text-left transition-colors ${active ? "bg-blue-500/10 border border-blue-500/40" : "border border-transparent hover:bg-zinc-800/60"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[12px] font-medium truncate ${active ? "text-blue-200" : "text-zinc-300"}`}>{tag.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {health.total > 0 && (
+                      <span className="flex items-center gap-1 text-[10px] text-amber-500/80 font-medium">
+                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                        {health.total}
+                      </span>
+                    )}
+                    <span className={`font-mono text-[11px] ${active ? "text-blue-300" : "text-zinc-500"}`}>{tag.count}</span>
                   </div>
-                </button>
-              );
-            })
-          )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-zinc-600">{tag.domains} domain{tag.domains !== 1 ? "s" : ""}</span>
+                  {health.lowRep > 0 && <span className="text-[10px] text-amber-600">{health.lowRep} low rep</span>}
+                  {health.inactive > 0 && <span className="text-[10px] text-amber-600">{health.inactive} paused</span>}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main Form ─────────────────────────────────────────────────────────────────
+// ── Selected tag health panel ─────────────────────────────────────────────────
+
+function SelectedTagPanel({ tag, avgRep, domainCount }: { tag: SmartleadTag; avgRep: number | null; domainCount: number }) {
+  const health = tagHealthStats(tag);
+
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 space-y-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600 font-semibold">Selected tag</p>
+          <p className="text-[13px] font-semibold text-zinc-100 mt-0.5 truncate">{tag.name}</p>
+        </div>
+        {health.total > 0 && (
+          <span className="shrink-0 flex items-center gap-1 text-[10px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5">
+            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+            {health.total} at-risk
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {[
+          { label: "accounts", value: tag.accounts.length.toLocaleString() },
+          { label: "domains", value: domainCount.toLocaleString() },
+          { label: "avg rep", value: avgRep !== null ? `${avgRep}%` : "—" },
+        ].map(({ label, value }) => (
+          <div key={label} className="rounded bg-zinc-900 px-2 py-1.5 text-center">
+            <p className="font-mono text-[13px] font-medium text-zinc-100">{value}</p>
+            <p className="text-[9px] uppercase tracking-wide text-zinc-600 mt-px">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {health.total > 0 && (
+        <div className="space-y-1">
+          {health.lowRep > 0 && (
+            <p className="text-[11px] text-amber-600/90">
+              ⚠ {health.lowRep} account{health.lowRep !== 1 ? "s" : ""} below 70% warmup reputation
+            </p>
+          )}
+          {health.inactive > 0 && (
+            <p className="text-[11px] text-amber-600/90">
+              ⚠ {health.inactive} account{health.inactive !== 1 ? "s" : ""} paused or stopped
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main form ─────────────────────────────────────────────────────────────────
 
 export default function LaunchForm({ onSubmit }: Props) {
   const apiConfig = useMemo(() => loadApiConfig(), []);
@@ -597,33 +652,26 @@ export default function LaunchForm({ onSubmit }: Props) {
       const result = await fetchSmartleadTags(force);
       setTags(result.tags);
       setFetchedAt(result.fetchedAt);
-      setSelectedTagName((current) => current && result.tags.some((tag) => tag.name === current) ? current : "");
-    } catch (error) {
-      setTagsError(error instanceof Error ? error.message : "Unable to fetch Smartlead tags.");
+      setSelectedTagName((cur) => cur && result.tags.some((t) => t.name === cur) ? cur : "");
+    } catch (err) {
+      setTagsError(err instanceof Error ? err.message : "Unable to fetch tags.");
     } finally {
       setTagsLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    void refreshTags(false);
-  }, [refreshTags]);
+  useEffect(() => { void refreshTags(false); }, [refreshTags]);
 
   const handleAddLeads = async (file: File) => {
-    const entry: FileState<LeadRow> = { file, data: null, errors: [], warnings: [], loading: true };
-    setLeadsFiles((prev) => [...prev, entry]);
+    setLeadsFiles((prev) => [...prev, { file, data: null, errors: [], warnings: [], loading: true }]);
     const result = await parseLeads(file);
     setLeadsFiles((prev) => {
-      const index = prev.findLastIndex((item) => item.file === file);
-      if (index === -1) return prev;
+      const idx = prev.findLastIndex((item) => item.file === file);
+      if (idx === -1) return prev;
       const next = [...prev];
-      next[index] = { file, ...result, loading: false };
+      next[idx] = { file, ...result, loading: false };
       return next;
     });
-  };
-
-  const handleRemoveLeads = (index: number) => {
-    setLeadsFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const handleSeq = async (file: File) => {
@@ -632,57 +680,46 @@ export default function LaunchForm({ onSubmit }: Props) {
     setSeqState({ file, ...result, loading: false });
   };
 
-  const selectedTag = useMemo(
-    () => tags.find((tag) => tag.name === selectedTagName) ?? null,
-    [selectedTagName, tags]
-  );
-
+  const selectedTag = useMemo(() => tags.find((t) => t.name === selectedTagName) ?? null, [selectedTagName, tags]);
   const selectedAccounts = selectedTag?.accounts ?? [];
-  const selectedDomains = useMemo(() => new Set(selectedAccounts.map((account) => account.domain).filter(Boolean)).size, [selectedAccounts]);
+  const selectedDomains = useMemo(() => new Set(selectedAccounts.map((a) => a.domain).filter(Boolean)).size, [selectedAccounts]);
   const selectedAvgRep = useMemo(() => {
-    const reps = selectedAccounts.map((account) => account.reputation).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    if (reps.length === 0) return null;
-    return Math.round(reps.reduce((sum, value) => sum + value, 0) / reps.length);
+    const reps = selectedAccounts.map((a) => a.reputation).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    if (!reps.length) return null;
+    return Math.round(reps.reduce((s, v) => s + v, 0) / reps.length);
   }, [selectedAccounts]);
 
-  const leadsReady = leadsFiles.length > 0 && leadsFiles.every((file) => file.data !== null && !file.loading);
+  const sampleLead = useMemo(() => {
+    for (const f of leadsFiles) { if (f.data && f.data.length > 0) return f.data[0]; }
+    return null;
+  }, [leadsFiles]);
+
+  const leadsReady = leadsFiles.length > 0 && leadsFiles.every((f) => f.data !== null && !f.loading);
   const sequenceReady = seqState.data !== null && !seqState.loading;
-  const totalLeads = leadsFiles.reduce((sum, file) => sum + (file.data?.length ?? 0), 0);
+  const totalLeads = leadsFiles.reduce((s, f) => s + (f.data?.length ?? 0), 0);
   const sequenceCount = seqState.data?.length ?? 0;
   const inboxRequired = mode === "launch";
   const inboxReady = selectedAccounts.length > 0;
-  const hasErrors = leadsFiles.some((file) => file.errors.length > 0) || seqState.errors.length > 0;
-
+  const hasErrors = leadsFiles.some((f) => f.errors.length > 0) || seqState.errors.length > 0;
   const canSubmit = campaignName.trim().length > 0 && leadsReady && sequenceReady && !hasErrors && (inboxReady || !inboxRequired);
 
-  const submitLabel = !campaignName.trim()
-    ? "Enter campaign name"
-    : !leadsReady || !sequenceReady
-      ? "Upload leads and sequence"
-      : hasErrors
-        ? "Fix CSV errors"
-        : inboxRequired && !inboxReady
-          ? "Select a Smartlead tag"
-          : mode === "launch"
-            ? "Launch campaign"
-            : "Save as draft";
+  const submitLabel = !campaignName.trim() ? "Enter a campaign name"
+    : !leadsReady || !sequenceReady ? "Upload leads & sequence"
+    : hasErrors ? "Fix CSV errors above"
+    : inboxRequired && !inboxReady ? "Select a Smartlead tag"
+    : mode === "launch" ? "Launch campaign →"
+    : "Save as draft →";
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-
-    const inboxes: InboxRow[] = selectedAccounts.map((account) => ({
-      email_account_id: String(account.id),
-      from_email: account.email,
-    }));
-
     onSubmit({
       campaignName: campaignName.trim(),
       mode,
       templateKey,
       customSchedule,
-      leads: leadsFiles.flatMap((file) => file.data ?? []),
+      leads: leadsFiles.flatMap((f) => f.data ?? []),
       sequences: seqState.data ?? [],
-      inboxes,
+      inboxes: selectedAccounts.map((a) => ({ email_account_id: String(a.id), from_email: a.email })),
       inboxTag: selectedTagName,
       apiConfig,
       campaignSettings,
@@ -691,185 +728,165 @@ export default function LaunchForm({ onSubmit }: Props) {
 
   return (
     <>
-      <SettingsDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        campaignSettings={campaignSettings}
-        onCampaignSettingsChange={setCampaignSettings}
-      />
+      <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}
+        campaignSettings={campaignSettings} onCampaignSettingsChange={setCampaignSettings} />
 
-      <div className="min-h-screen bg-gray-950 px-4 py-8 text-gray-100">
-        <div className="mx-auto max-w-[1180px] space-y-6">
-          <header className="flex flex-col gap-4 rounded-2xl border border-gray-800 bg-gray-900/60 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500 shadow-lg shadow-blue-500/20">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">B2BDrive</p>
-                  <h1 className="text-2xl font-bold text-white">Campaign Launcher</h1>
-                </div>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+        {/* Top bar */}
+        <div className="border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur sticky top-0 z-30">
+          <div className="mx-auto max-w-[1120px] px-5 h-11 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="h-6 w-6 rounded bg-blue-500 flex items-center justify-center shrink-0">
+                <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
               </div>
-              <p className="mt-3 max-w-2xl text-sm text-gray-500">Upload only leads and sequence. Inbox selection now comes directly from Smartlead tags through a private Vercel server route.</p>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">B2BDrive</span>
+              <span className="text-zinc-800">/</span>
+              <span className="text-[13px] font-semibold text-zinc-200">Campaign Launcher</span>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusPill ok label="API key server-side" />
-              <StatusPill ok={!tagsError} label={tagsLoading ? "Tags syncing" : "Tags ready"} />
-              <button onClick={() => setDrawerOpen(true)} className="rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-xs font-semibold text-gray-300 hover:border-gray-500">Defaults</button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <span className="text-[11px] text-zinc-500">API server-side</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${tagsError ? "bg-red-400" : tagsLoading ? "bg-amber-400 animate-pulse" : tags.length > 0 ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                <span className="text-[11px] text-zinc-500">{tagsLoading ? "Syncing tags…" : tagsError ? "Tag error" : tags.length > 0 ? `${tags.length} tags` : "No tags"}</span>
+              </div>
+              <button onClick={() => setDrawerOpen(true)}
+                className="h-6 px-2.5 rounded border border-zinc-800 text-[11px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 transition-colors">
+                Defaults · {campaignSettings.sendGapMinutes}m gap
+              </button>
             </div>
-          </header>
+          </div>
+        </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-            <main className="space-y-6">
-              <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5">
-                <div className="grid gap-4 md:grid-cols-[1fr_220px]">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">Campaign name</label>
-                    <input
-                      type="text"
-                      value={campaignName}
-                      onChange={(e) => setCampaignName(e.target.value)}
+        {/* Main layout */}
+        <div className="mx-auto max-w-[1120px] px-5 py-6">
+          <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+
+            {/* ── Left column ── */}
+            <div className="space-y-4">
+
+              {/* Campaign name + mode */}
+              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-4">
+                <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+                  <div>
+                    <Label>Campaign name</Label>
+                    <input type="text" value={campaignName} onChange={(e) => setCampaignName(e.target.value)}
                       placeholder="e.g. Q2 Outbound — SaaS Founders"
-                      className="w-full rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                    />
+                      className="w-full h-8 rounded border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 placeholder-zinc-700 focus:border-blue-500 focus:outline-none transition-colors" />
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">Mode</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(["draft", "launch"] as const).map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => setMode(item)}
-                          className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${mode === item ? item === "draft" ? "border-blue-500 bg-blue-500/10 text-blue-300" : "border-green-500 bg-green-500/10 text-green-300" : "border-gray-800 bg-gray-950 text-gray-500 hover:border-gray-700"}`}
-                        >
-                          {item === "draft" ? "Draft" : "Launch"}
+                  <div>
+                    <Label>Mode</Label>
+                    <div className="flex gap-1.5 h-8">
+                      {(["draft", "launch"] as const).map((m) => (
+                        <button key={m} type="button" onClick={() => setMode(m)}
+                          className={`flex-1 rounded text-[12px] font-medium border transition-colors ${mode === m ? m === "draft" ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-emerald-500/50 bg-emerald-500/10 text-emerald-300" : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"}`}>
+                          {m === "draft" ? "Draft" : "Launch"}
                         </button>
                       ))}
                     </div>
+                    {mode === "launch" && <p className="text-[10px] text-amber-500/70 mt-1">Goes live immediately after upload</p>}
                   </div>
                 </div>
-              </section>
+              </div>
 
-              <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 space-y-5">
+              {/* Files */}
+              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
+                <Label>Files</Label>
+                <MultiLeadsDropZone files={leadsFiles} onAddFile={handleAddLeads} onRemoveFile={(i) => setLeadsFiles((prev) => prev.filter((_, idx) => idx !== i))} />
                 <div>
-                  <p className="text-sm font-semibold text-white">Inputs</p>
-                  <p className="text-xs text-gray-500 mt-0.5">The master inbox upload is removed. Tags are pulled live from Smartlead.</p>
+                  <DropZone label="Sequence" hint="seq_number, subject, body, delay_days" fileState={seqState as FileState<unknown>} onFile={handleSeq} />
+                  {sequenceReady && seqState.data && (
+                    <SequencePreview sequences={seqState.data} sampleLead={sampleLead} />
+                  )}
                 </div>
-                <MultiLeadsDropZone files={leadsFiles} onAddFile={handleAddLeads} onRemoveFile={handleRemoveLeads} />
-                <DropZone label="Sequence CSV" hint="Required: seq_number, subject, body, delay_days." fileState={seqState as FileState<unknown>} onFile={handleSeq} />
-              </section>
+              </div>
 
-              <section className="rounded-2xl border border-gray-800 bg-gray-900/60 p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">Schedule</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Pick a preset or customize your sending window.</p>
-                  </div>
-                  <button onClick={() => setDrawerOpen(true)} className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-500">
-                    Gap: {campaignSettings.sendGapMinutes}m
-                  </button>
-                </div>
-
-                <div className="grid gap-2 md:grid-cols-2">
+              {/* Schedule */}
+              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-4">
+                <Label>Schedule</Label>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                   {PRESET_KEYS.map((key) => {
-                    const template = TEMPLATES[key];
+                    const t = TEMPLATES[key];
                     return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setTemplateKey(key)}
-                        className={`rounded-xl border p-4 text-left transition ${templateKey === key ? "border-blue-500 bg-blue-500/10" : "border-gray-800 bg-gray-950 hover:border-gray-700"}`}
-                      >
-                        <p className={`text-sm font-semibold ${templateKey === key ? "text-blue-300" : "text-gray-200"}`}>{template.label}</p>
-                        <p className="mt-1 text-xs text-gray-500">{template.description}</p>
-                        <p className="mt-1 text-xs text-gray-600">Max {template.maxLeads} leads/day</p>
+                      <button key={key} type="button" onClick={() => setTemplateKey(key)}
+                        className={`rounded p-2.5 text-left border transition-colors ${templateKey === key ? "border-blue-500/50 bg-blue-500/10" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"}`}>
+                        <p className={`text-[12px] font-semibold ${templateKey === key ? "text-blue-300" : "text-zinc-300"}`}>{t.label}</p>
+                        <p className="text-[10px] text-zinc-600 mt-0.5 font-mono">{t.maxLeads}/day</p>
                       </button>
                     );
                   })}
-                  <button
-                    type="button"
-                    onClick={() => setTemplateKey("custom")}
-                    className={`rounded-xl border p-4 text-left transition ${templateKey === "custom" ? "border-purple-500 bg-purple-500/10" : "border-gray-800 bg-gray-950 hover:border-gray-700"}`}
-                  >
-                    <p className={`text-sm font-semibold ${templateKey === "custom" ? "text-purple-300" : "text-gray-200"}`}>Custom</p>
-                    <p className="mt-1 text-xs text-gray-500">Choose timezone, days, hours and daily cap.</p>
-                    <p className="mt-1 text-xs text-gray-600">Best for client-specific launch rules</p>
+                  <button type="button" onClick={() => setTemplateKey("custom")}
+                    className={`rounded p-2.5 text-left border transition-colors ${templateKey === "custom" ? "border-purple-500/50 bg-purple-500/10" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700"}`}>
+                    <p className={`text-[12px] font-semibold ${templateKey === "custom" ? "text-purple-300" : "text-zinc-300"}`}>Custom</p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">Configure</p>
                   </button>
                 </div>
-
                 {templateKey === "custom" && <CustomScheduleEditor schedule={customSchedule} onChange={setCustomSchedule} />}
-              </section>
-            </main>
+              </div>
+            </div>
 
-            <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
-              <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Leads" value={totalLeads.toLocaleString()} hint={leadsReady ? "CSV ready" : "Upload required"} />
-                <StatCard label="Steps" value={sequenceCount || "—"} hint={sequenceReady ? "Sequence ready" : "Upload required"} />
-                <StatCard label="Inboxes" value={selectedAccounts.length ? selectedAccounts.length.toLocaleString() : "—"} hint={selectedTagName || "Select tag"} />
+            {/* ── Right column (sticky) ── */}
+            <div className="space-y-4 lg:sticky lg:top-[52px] lg:self-start lg:max-h-[calc(100vh-76px)] lg:overflow-y-auto lg:pr-0.5 scrollbar-thin">
+
+              {/* Summary stats */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Leads", value: totalLeads > 0 ? totalLeads.toLocaleString() : "—", ok: leadsReady },
+                  { label: "Steps", value: sequenceCount > 0 ? String(sequenceCount) : "—", ok: sequenceReady },
+                  { label: "Inboxes", value: selectedAccounts.length > 0 ? selectedAccounts.length.toLocaleString() : "—", ok: inboxReady },
+                ].map(({ label, value, ok }) => (
+                  <div key={label} className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600 font-semibold">{label}</p>
+                    <p className={`font-mono text-[18px] font-semibold mt-0.5 ${ok ? "text-zinc-100" : "text-zinc-600"}`}>{value}</p>
+                  </div>
+                ))}
               </div>
 
-              <TagPicker
-                tags={tags}
-                selectedTag={selectedTagName}
-                query={tagQuery}
-                loading={tagsLoading}
-                error={tagsError}
-                onQuery={setTagQuery}
-                onSelect={setSelectedTagName}
-                onRefresh={() => { void refreshTags(true); }}
-              />
+              {/* Tag picker */}
+              <TagPicker tags={tags} selectedTag={selectedTagName} query={tagQuery} loading={tagsLoading}
+                error={tagsError} onQuery={setTagQuery} onSelect={setSelectedTagName}
+                onRefresh={() => { void refreshTags(true); }} />
 
-              <section className="rounded-2xl border border-gray-800 bg-gray-900/70 p-5 space-y-4">
-                <div>
-                  <p className="text-sm font-semibold text-white">Launch check</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{fetchedAt ? `Tags synced ${new Date(fetchedAt).toLocaleString()}` : "Waiting for tag sync"}</p>
+              {/* Selected tag health */}
+              {selectedTag && (
+                <SelectedTagPanel tag={selectedTag} avgRep={selectedAvgRep} domainCount={selectedDomains} />
+              )}
+
+              {/* Launch check */}
+              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[12px] font-semibold text-zinc-200">Launch check</p>
+                  {fetchedAt && (
+                    <span className="text-[10px] text-zinc-700">synced {new Date(fetchedAt).toLocaleTimeString()}</span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <StatusPill ok={campaignName.trim().length > 0} label="Campaign named" />
-                  <StatusPill ok={leadsReady} label="Leads ready" />
-                  <StatusPill ok={sequenceReady} label="Sequence ready" />
-                  <StatusPill ok={inboxReady || !inboxRequired} label={inboxRequired ? "Tag selected" : "Tag optional"} />
+                <div className="space-y-1.5">
+                  <CheckItem ok={campaignName.trim().length > 0} label="Campaign named" />
+                  <CheckItem ok={leadsReady} label="Leads uploaded" />
+                  <CheckItem ok={sequenceReady} label="Sequence uploaded" />
+                  <CheckItem ok={inboxReady || !inboxRequired} label={inboxRequired ? "Tag selected" : "Tag (optional in draft)"} />
                 </div>
 
-                {selectedTag && (
-                  <div className="rounded-xl border border-gray-800 bg-gray-950 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-600">Selected tag</p>
-                    <p className="mt-1 truncate text-base font-semibold text-white">{selectedTag.name}</p>
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-lg bg-gray-900 px-2 py-2">
-                        <p className="text-sm font-bold text-white">{selectedAccounts.length.toLocaleString()}</p>
-                        <p className="text-[10px] text-gray-500">accounts</p>
-                      </div>
-                      <div className="rounded-lg bg-gray-900 px-2 py-2">
-                        <p className="text-sm font-bold text-white">{selectedDomains.toLocaleString()}</p>
-                        <p className="text-[10px] text-gray-500">domains</p>
-                      </div>
-                      <div className="rounded-lg bg-gray-900 px-2 py-2">
-                        <p className="text-sm font-bold text-white">{selectedAvgRep === null ? "—" : `${selectedAvgRep}%`}</p>
-                        <p className="text-[10px] text-gray-500">avg rep</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleSubmit}
-                  disabled={!canSubmit}
-                  className={`w-full rounded-xl px-5 py-3 text-sm font-bold transition ${canSubmit ? mode === "launch" ? "bg-green-500 text-white shadow-lg shadow-green-500/20 hover:bg-green-400" : "bg-blue-500 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-400" : "cursor-not-allowed bg-gray-800 text-gray-600"}`}
-                >
+                <button onClick={handleSubmit} disabled={!canSubmit}
+                  className={`w-full h-9 rounded text-[13px] font-semibold transition-colors ${
+                    canSubmit
+                      ? mode === "launch"
+                        ? "bg-emerald-500 text-white hover:bg-emerald-400 shadow-sm shadow-emerald-500/20"
+                        : "bg-blue-500 text-white hover:bg-blue-400 shadow-sm shadow-blue-500/20"
+                      : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  }`}>
                   {submitLabel}
                 </button>
 
-                <p className="text-center text-[11px] text-gray-700">Built by Sen · server-secured Smartlead launcher</p>
-              </section>
-            </aside>
+                <p className="text-center text-[10px] text-zinc-800">B2BDrive · server-secured launcher</p>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>

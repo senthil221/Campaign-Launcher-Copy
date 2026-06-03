@@ -5,13 +5,13 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "Inter",
+          "IBM Plex Sans",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
           "sans-serif",
         ],
-        mono: ["JetBrains Mono", "Fira Code", "monospace"],
+        mono: ["IBM Plex Mono", "JetBrains Mono", "Fira Code", "monospace"],
       },
       animation: {
         "spin-slow": "spin 2s linear infinite",
