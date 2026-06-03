@@ -18,7 +18,7 @@ import {
   type ApiConfig,
   type CampaignSettings,
 } from "../lib/config";
-import { fetchSmartleadTags, fetchTagAccounts, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
+import { fetchSmartleadTags, type SmartleadTag, type SmartleadTagAccount } from "../lib/tags";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -642,11 +642,6 @@ export default function LaunchForm({ onSubmit }: Props) {
   const [selectedTagName, setSelectedTagName] = useState("");
   const [fetchedAt, setFetchedAt] = useState("");
 
-  // Accounts loaded on-demand when a tag is selected
-  const [tagAccounts, setTagAccounts] = useState<SmartleadTagAccount[]>([]);
-  const [tagAccountsLoading, setTagAccountsLoading] = useState(false);
-  const [tagAccountsError, setTagAccountsError] = useState("");
-
   const refreshTags = useCallback(async (force = false) => {
     setTagsLoading(true);
     setTagsError("");
@@ -663,24 +658,6 @@ export default function LaunchForm({ onSubmit }: Props) {
   }, []);
 
   useEffect(() => { void refreshTags(false); }, [refreshTags]);
-
-  const handleSelectTag = useCallback(async (name: string) => {
-    setSelectedTagName(name);
-    if (!name) { setTagAccounts([]); return; }
-    const tag = tags.find((t) => t.name === name);
-    if (!tag?.id) { setTagAccountsError("Tag has no ID — cannot load accounts."); return; }
-    setTagAccounts([]);
-    setTagAccountsLoading(true);
-    setTagAccountsError("");
-    try {
-      const result = await fetchTagAccounts(tag.id);
-      setTagAccounts(result.accounts);
-    } catch (err) {
-      setTagAccountsError(err instanceof Error ? err.message : "Failed to load accounts.");
-    } finally {
-      setTagAccountsLoading(false);
-    }
-  }, [tags]);
 
   const handleAddLeads = async (file: File) => {
     setLeadsFiles((prev) => [...prev, { file, data: null, errors: [], warnings: [], loading: true }]);
@@ -700,7 +677,8 @@ export default function LaunchForm({ onSubmit }: Props) {
     setSeqState({ file, ...result, loading: false });
   };
 
-  const selectedAccounts = tagAccounts;
+  const selectedTag = useMemo(() => tags.find((t) => t.name === selectedTagName) ?? null, [selectedTagName, tags]);
+  const selectedAccounts = selectedTag?.accounts ?? [];
   const selectedDomains = useMemo(() => new Set(selectedAccounts.map((a) => a.domain).filter(Boolean)).size, [selectedAccounts]);
   const selectedAvgRep = useMemo(() => {
     const reps = selectedAccounts.map((a) => a.reputation).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
@@ -718,7 +696,7 @@ export default function LaunchForm({ onSubmit }: Props) {
   const totalLeads = leadsFiles.reduce((s, f) => s + (f.data?.length ?? 0), 0);
   const sequenceCount = seqState.data?.length ?? 0;
   const inboxRequired = mode === "launch";
-  const inboxReady = selectedAccounts.length > 0 && !tagAccountsLoading;
+  const inboxReady = selectedAccounts.length > 0;
   const hasErrors = leadsFiles.some((f) => f.errors.length > 0) || seqState.errors.length > 0;
   const canSubmit = campaignName.trim().length > 0 && leadsReady && sequenceReady && !hasErrors && (inboxReady || !inboxRequired);
 
@@ -867,18 +845,17 @@ export default function LaunchForm({ onSubmit }: Props) {
 
               {/* Tag picker */}
               <TagPicker tags={tags} selectedTag={selectedTagName} query={tagQuery} loading={tagsLoading}
-                error={tagsError} onQuery={setTagQuery} onSelect={handleSelectTag}
+                error={tagsError} onQuery={setTagQuery} onSelect={setSelectedTagName}
                 onRefresh={() => { void refreshTags(true); }} />
 
-              {/* Selected tag health — loads on demand */}
-              {selectedTagName && (
+              {selectedTag && (
                 <SelectedTagPanel
-                  tagName={selectedTagName}
-                  accounts={tagAccounts}
+                  tagName={selectedTag.name}
+                  accounts={selectedAccounts}
                   domainCount={selectedDomains}
                   avgRep={selectedAvgRep}
-                  loading={tagAccountsLoading}
-                  error={tagAccountsError}
+                  loading={false}
+                  error=""
                 />
               )}
 
